@@ -1,0 +1,57 @@
+appId: dev.stiz.zipper
+productName: Zipper
+copyright: Copyright © 2026 stiz
+
+publish:
+  provider: github
+  owner: KisaragiIchigo
+  repo: zipper
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+
+# 7-Zip は asar の外へ置く。asar 内の実行ファイルは起動できないため
+extraResources:
+  - from: resources/7zip
+    to: 7zip
+    filter:
+      - '**/*'
+  # 新しい右クリックメニューを組み立てる COM の実体
+  - from: resources/shell
+    to: shell
+    filter:
+      - '**/*'
+  # パッケージの登録に使う一式
+  - from: packaging/ZipperShell.msix
+    to: shell/ZipperShell.msix
+  - from: packaging/ZipperDev.cer
+    to: shell/ZipperDev.cer
+  - from: packaging/install-package.ps1
+    to: shell/install-package.ps1
+  - from: packaging/uninstall-package.ps1
+    to: shell/uninstall-package.ps1
+
+asar: true
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+nsis:
+  include: build/installer.nsh
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false

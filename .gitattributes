@@ -1,0 +1,19 @@
+# 改行はリポジトリ内で LF に統一する
+* text=auto eol=lf
+
+# Windows のコマンド処理系は CRLF でないと行を読み違える
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 中身を書き換えられては困るもの
+*.png binary
+*.ico binary
+*.icns binary
+*.exe binary
+*.dll binary
+*.sfx binary
+*.msix binary
+*.cer binary
+*.pfx binary
+*.obj binary

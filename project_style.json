@@ -1,0 +1,147 @@
+{
+  "_readme": "プロジェクトスタイルマニフェスト。エージェントはUIに触れるすべてのタスクの冒頭でこれを読み、ここに無い色・フォント・質感を勝手に導入してはならない。変更はユーザー合意の上でこのファイルを更新し、changelogs.json に記録する。パレットは light/dark の二層構造で、実装は CSS 変数（--fluent-*）に落としたうえで Tailwind の theme.extend から参照する。",
+  "meta": {
+    "project": "Zipper",
+    "concept": "Windows 11 に自然に溶け込む佇まいのまま、日本語ファイル名の文字化けと多形式アーカイブの扱いを取りこぼさない、常用アーカイバ。",
+    "mood_keywords": [
+      "Fluent",
+      "静謐",
+      "高密度",
+      "OSネイティブ",
+      "実務的",
+      "軽快"
+    ],
+    "created": "2026-09-02",
+    "updated": "2026-09-02"
+  },
+  "stack": {
+    "framework": "Electron + Vite + React + TypeScript",
+    "styling": "Tailwind CSS v3",
+    "ui_primitives": "Radix UI",
+    "motion": "Framer Motion（LazyMotion + m モジュール）",
+    "_rule": "スタック変更はユーザーの明示指定のみ"
+  },
+  "palette": {
+    "_scheme": "OS のテーマ設定に追従する light / dark 二層。すべて CSS 変数で定義し、Tailwind ユーティリティは変数を参照する形で使う。生の16進をコンポーネントへ直書きしない。",
+    "light": {
+      "base_bg": "#f3f3f3",
+      "base_bg_alt": "#fafafa",
+      "surface": "rgba(255,255,255,0.70)",
+      "surface_solid": "#ffffff",
+      "surface_deep": "rgba(249,249,249,0.85)",
+      "border": "rgba(0,0,0,0.0578)",
+      "border_subtle": "rgba(0,0,0,0.0373)",
+      "accent": "#005fb8",
+      "accent_hover": "#0078d4",
+      "accent_pressed": "#004c96",
+      "accent_glow": "shadow-[0_0_0_1px_rgba(0,95,184,0.30)]",
+      "accent_badge": "bg-[#005fb8]/10 text-[#005fb8]",
+      "selection_row": "bg-[#005fb8]/[0.08]",
+      "subtle_hover": "rgba(0,0,0,0.0373)",
+      "subtle_pressed": "rgba(0,0,0,0.0241)",
+      "focus_ring": "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#005fb8]",
+      "danger": "bg-[#c42b1c]/10 border-[#c42b1c]/25 text-[#a02b1c]",
+      "warning": "bg-[#9d5d00]/10 border-[#9d5d00]/25 text-[#7a4a00]",
+      "success": "bg-[#0f7b0f]/10 border-[#0f7b0f]/25 text-[#0c6b0c]",
+      "text_primary": "#1a1a1a",
+      "text_secondary": "#5d5d5d",
+      "text_disabled": "#9a9a9a"
+    },
+    "dark": {
+      "base_bg": "#202020",
+      "base_bg_alt": "#191919",
+      "surface": "rgba(255,255,255,0.0512)",
+      "surface_solid": "#2b2b2b",
+      "surface_deep": "rgba(0,0,0,0.28)",
+      "border": "rgba(255,255,255,0.0698)",
+      "border_subtle": "rgba(255,255,255,0.0465)",
+      "accent": "#60cdff",
+      "accent_hover": "#7cd8ff",
+      "accent_pressed": "#4bb8ea",
+      "accent_glow": "shadow-[0_0_0_1px_rgba(96,205,255,0.30)]",
+      "accent_badge": "bg-[#60cdff]/10 text-[#60cdff]",
+      "selection_row": "bg-[#60cdff]/[0.10]",
+      "subtle_hover": "rgba(255,255,255,0.0605)",
+      "subtle_pressed": "rgba(255,255,255,0.0419)",
+      "focus_ring": "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#60cdff]",
+      "danger": "bg-[#ff99a4]/10 border-[#ff99a4]/25 text-[#ff99a4]",
+      "warning": "bg-[#fce100]/10 border-[#fce100]/25 text-[#fce100]",
+      "success": "bg-[#6ccb5f]/10 border-[#6ccb5f]/25 text-[#6ccb5f]",
+      "text_primary": "#ffffff",
+      "text_secondary": "#cfcfcf",
+      "text_disabled": "#787878"
+    },
+    "text_description_min": "text-xs 以上・透過なし。light は text_secondary(#5d5d5d)、dark は text_secondary(#cfcfcf) を下限とする",
+    "_rule": "新しい色はまずここに追記してから使う。UIファイルへの直書きで色を増やさない。light/dark は必ず対で追加する",
+    "_subtle_note": "subtle_hover / subtle_pressed は Fluent の SubtleFillColorSecondary / Tertiary。地が透明なコントロール（IconButton・メニュー項目）のホバーと押下にのみ使う"
+  },
+  "typography": {
+    "display": "Manrope（見出し・タブ・ツールバーラベル。幾何学的で抜けの良いグロテスク）",
+    "body": "IBM Plex Sans JP（本文・ファイル名。和欧混植に強く高密度リストで潰れない）",
+    "mono": "IBM Plex Mono（ファイルサイズ・日時・CRC・パス。tabular-nums 必須）",
+    "jp": "IBM Plex Sans JP（body と共用。明朝系および Noto Sans JP ベタ置きは禁止。@fontsource から同梱し、外部 CDN は使わない）",
+    "fallback_stack": "各フォントの後段に sans-serif / monospace のみを置き、Segoe UI 等のシステムフォント名を第一候補にしない",
+    "weights": "display 500/700、body 400/500、mono 400/500。和文フォントは 1 ウェイトあたり約 5MB あるため、必要が生じるまで増やさない",
+    "label_style": "text-[11px] 相当は禁止。ラベルは text-xs + UPPERCASE + tracking-wider、値は text-sm",
+    "numeric": "サイズ・件数・進捗は font-mono + tabular-nums で桁を揃える",
+    "fluid": "clamp() でウィンドウリサイズに滑らかに追従させる"
+  },
+  "texture": {
+    "acrylic": true,
+    "mica_base": "ウィンドウ地は Mica 相当のフラットな base_bg。ここにグラデーションを敷かない",
+    "backdrop_blur": "backdrop-blur-[30px]（Fluent Acrylic 相当。タイトルバー・コマンドバー・ダイアログ背面に限定）",
+    "acrylic_scope": "浮いている面（メニュー・ダイアログ・フライアウト・タイトルバー）にのみ適用。ファイルリスト本体には敷かない",
+    "elevation": "shadow-[0_8px_16px_rgba(0,0,0,0.14)]（フライアウト）/ shadow-[0_32px_64px_rgba(0,0,0,0.19)]（ダイアログ）",
+    "inset_shadow": "入力欄は下端 1px の強調ライン（Fluent の TextControlElevation）で表現し、深いインセット影は使わない",
+    "radius": {
+      "control": "4px",
+      "card": "7px",
+      "overlay": "8px",
+      "window": "8px"
+    }
+  },
+  "density": {
+    "level": "high",
+    "reference": "Windows 11 エクスプローラーの詳細ビュー",
+    "row_height": "28px（コンパクト）/ 32px（既定）をユーザー切替可能にする",
+    "icon_size": "w-4 h-4 を基準とし、ツリーの折りたたみ矢印のみ w-3.5 h-3.5",
+    "icon_color": "text_secondary。アクティブ行でのみ accent",
+    "icon_style": "Fluent 系の線アイコン（lucide-react の stroke-[1.5]）で統一。塗りつぶしアイコンと混在させない",
+    "slider": "極細トラック + 数値は mono バッジ",
+    "column_layout": "名前 / サイズ / 圧縮後 / 種類 / 更新日時 / CRC を可変幅カラムで並べ、幅はドラッグで調整・永続化する"
+  },
+  "motion": {
+    "_easing_note": "Fluent の標準イージングに合わせる。跳ねる・伸びる系のイージングは使わない",
+    "ease_standard": "cubic-bezier(0, 0, 0, 1)",
+    "ease_exit": "cubic-bezier(1, 0, 1, 1)",
+    "duration": {
+      "fast": "150ms",
+      "normal": "250ms",
+      "slow": "350ms"
+    },
+    "hover": "背景の塗り変化のみ。ファイルリスト行を scale させない",
+    "hover_control": "hover:scale-[1.01] はボタン・カード等の独立コントロールに限定",
+    "active": "active:scale-[0.98]",
+    "tab_switch": "Magic Motion（layoutId によるアクセントバーの滑らかな移動）",
+    "disabled": "グレーアウトせず opacity-40",
+    "reduced_motion": "prefers-reduced-motion: reduce では transform 系を全停止し、opacity のみに落とす"
+  },
+  "zindex": {
+    "base": 0,
+    "floating": 40,
+    "modal": 50,
+    "tooltip": 60
+  },
+  "forbidden": [
+    "紫グラデーション on 白背景",
+    "Inter / Roboto / Arial / Outfit / Segoe UI 等システムフォント頼みのタイポグラフィ",
+    "和文UIへの明朝系フォント（Shippori Mincho 等）",
+    "Noto Sans JP のベタ置き",
+    "text-[10px] / text-[11px] や薄すぎるカラーの説明文",
+    "太いグレー枠・デフォルト影・原色ベタ塗り",
+    "ウィンドウ地へのグラデーション、ファイルリストへの backdrop-blur",
+    "ダークテーマ前提の値をライトテーマへ流用すること（必ず light/dark 対で定義する）",
+    "このファイルに無い色やフォントの直書き導入"
+  ],
+  "app_text_tone": "アプリ内のヘルプ・設定補足・エラーメッセージ・マニュアル類は「です・ます調（セミフォーマル）」で統一する"
+}

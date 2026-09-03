@@ -1,0 +1,17 @@
+node_modules/
+out/
+release/
+resources/7zip/*
+!resources/7zip/.gitkeep
+
+*.tsbuildinfo
+
+# 署名の秘密鍵は持ち出さない
+packaging/*.pfx
+
+# シェル拡張のビルド生成物
+resources/shell/
+native/shellext/*.obj
+
+# 公開の手元作業用。リポジトリには含めない
+GithubPush.bat

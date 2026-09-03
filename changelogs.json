@@ -1,0 +1,970 @@
+{
+  "_readme": "変更履歴。エージェントはコード生成・編集の前に必ずこのファイルを読み、作業後に必ず追記する。新しいエントリは entries 配列の先頭に追加する。",
+  "project": "Zipper",
+  "entries": [
+    {
+      "date": "2026-09-03",
+      "title": "続きの巻を開けるようにし、狭い窓での折り返しを直した",
+      "files": [
+        "src/main/sevenzip/volumeSets.ts",
+        "src/main/sevenzip/listArchive.ts",
+        "src/main/sevenzip/extractArchive.ts",
+        "src/main/sevenzip/extractBatch.ts",
+        "src/main/ipc/archive/listIpc.ts",
+        "src/shared/archiveNames.ts",
+        "src/renderer/hooks/useArchiveTabs.ts",
+        "src/renderer/lib/pathUtils.ts",
+        "src/renderer/components/ArchiveTable/columns.ts",
+        "src/renderer/components/ArchiveTable/TableRow.tsx",
+        "src/renderer/components/ArchiveTable/TableHeader.tsx",
+        "src/renderer/components/Toolbar/index.tsx",
+        "src/renderer/components/ExtractMenu/index.tsx",
+        "src/renderer/components/SearchBox/index.tsx",
+        "src/renderer/components/Breadcrumb/index.tsx"
+      ],
+      "summary": "分割書庫の続きの巻を選んでも、先頭の巻へ読み替えて開くようにした。まとめて選んだ場合は同じ書庫を二度処理しない。あわせて、窓が狭いときにボタンや日時が折り返す問題を直した。",
+      "purpose": "続きの巻を開こうとしても何も起きなかった不具合の解消と、まとめて解凍したときに同じ中身が重複して取り出されるのを防ぐこと。",
+      "impact": "一覧・展開・一括解凍のすべての入口で、続きの巻は先頭へ読み替えられる。タブも読み替え後のパスで見比べるため、同じ書庫のタブは 1 つに収まる。",
+      "decisions": [
+        "続きの巻を「落とす」のではなく「先頭へ読み替える」形に変えた。落とす実装では、続きの巻だけを選んだときに対象が空になり、何も起きなかった。",
+        "読み替えでは連番の桁数を保つ。part10.rar は part01.rar へ、7z.015 は 7z.001 へ向かう。桁数が違うと実在するファイルに当たらないため。",
+        "先頭の巻が見当たらないときは、渡されたパスをそのまま使う。判断できない状況で勝手に別のファイルを開くより、7-Zip の返す結果を見せるほうが正しい。",
+        "タブの重複を防ぐため、開く前に Main へ問い合わせてパスを正規化する。読み込みを終えてから気づいても、すでにタブが増えているため。",
+        "巻と拡張子の落とし方を shared へ集約した。一覧からの「フォルダを作って展開」とまとめて解凍とで規則が食い違い、前者では Game.part1 のような名前になっていた。"
+      ],
+      "verification": [
+        "npm run typecheck / npm run build 通過",
+        "読み替えを 9 パターンで確認（part2 / part10 / part02 / part1 / 7z.002 / zip.015 / 7z.001 / rar / zip）",
+        "実ファイルで .003 を渡すと .001 が開かれ、中身 6 件が読めることを確認",
+        "同じ書庫セット 3 件と別の書庫 1 件の計 4 件を渡すと、2 件に集約されることを確認",
+        "フォルダ名の決め方を 5 パターンで確認。part1.rar と part03.rar が同じ名前に落ちる",
+        "窓幅 760（最小）と 860 で、ボタンの高さが 32 のまま、日時が 1 行に収まり、横にあふれないことを確認"
+      ],
+      "concerns": [
+        "RAR の分割書庫は 7-Zip で作れないため、実ファイルでの確認は連番形式でのみ行った。RAR の名前の扱いは規則の確認までにとどまる。",
+        "一覧の列幅は窓の最小幅に収まるよう詰めた。名前の列が狭くなるため、長いファイル名は省略される。"
+      ]
+    },
+    {
+      "date": "2026-09-03",
+      "title": "解凍だけで呼ばれたときは進み具合の窓だけを出す",
+      "files": [
+        "src/renderer/App.tsx",
+        "src/renderer/app/MainApp.tsx",
+        "src/renderer/app/ProgressApp.tsx",
+        "src/renderer/components/TaskProgressDialog/TaskProgressPanel.tsx",
+        "src/renderer/components/TaskProgressDialog/index.tsx",
+        "src/renderer/components/SettingsDialog/**",
+        "src/main/window/createMainWindow.ts",
+        "src/main/index.ts",
+        "src/main/shell/packageStatus.ts",
+        "src/main/shell/applyIntegration.ts",
+        "src/preload/index.ts",
+        "src/shared/types.ts",
+        "src/shared/ipc.ts"
+      ],
+      "summary": "右クリックから解凍を選んだときは、一覧を出さずに進み具合の窓だけを開くようにした。窓は小さめに開き、大きさを変えられる。あわせて設定画面に、右クリックの 2 つの入口それぞれの状態を出すようにした。",
+      "purpose": "解凍のためだけに呼ばれた場面で、使わない一覧が出るのを避ける。また、インストール時に登録される入口と、設定画面から操作できる入口の違いを明確にする。",
+      "impact": "起動時の引数によって開く画面が変わる。App は分岐だけを担い、通常の画面は MainApp、解凍だけの画面は ProgressApp が受け持つ。",
+      "decisions": [
+        "開き方は additionalArguments で Renderer へ渡す。描き始める前に決まっている必要があり、問い合わせでは一覧が一瞬映ってしまうため。",
+        "進み具合の窓は大きさを覚える対象から外す。通常の窓とは用途が違い、一方の大きさをもう一方へ持ち込むと使いにくくなるため。",
+        "進み具合の中身をダイアログの殻から切り離した。窓いっぱいに広げる場合と、他の画面に重ねる場合の両方で同じものを使うため。",
+        "解凍を終えたら少し置いて自動的に閉じる。失敗したときは内容を読ませたいので閉じない。",
+        "新しいメニュー側の登録は設定画面から操作させない。証明書の登録に管理者権限が要り、アプリの権限では完結しないため、状態の表示に留める。"
+      ],
+      "verification": [
+        "npm run typecheck / npm run build 通過",
+        "解凍として起こしたときに 560x480 の窓が開き、大きさを変えられることを確認",
+        "その窓に一覧もツールバーも描かれず、進み具合と結果だけが出ることを確認",
+        "設定画面を 4 つのファイルへ分け、すべて 200 行未満に収まることを確認"
+      ],
+      "concerns": [
+        "進み具合が動く様子は、短い書庫では一瞬で終わるため今回の確認では見ていない。別途 165MB の書庫で追ったときには時間と記録が伴って更新されている。",
+        "新しいメニュー側の状態は PowerShell を呼んで調べるため、設定画面を開いた際にわずかな待ちが生じる。"
+      ]
+    },
+    {
+      "date": "2026-09-03",
+      "title": "インストール時に新しい右クリックメニューを自動登録",
+      "files": [
+        "build/installer.nsh",
+        "electron-builder.yml",
+        "package.json",
+        "packaging/make-package.ps1",
+        "packaging/install-package.ps1"
+      ],
+      "summary": "インストーラの実行時に、旧来のレジストリ方式と Windows 11 の新しいメニュー用パッケージの両方を登録するようにした。アンインストール時には両方を解除する。",
+      "purpose": "登録のために利用者へ手作業を求めない。",
+      "impact": "インストーラが管理者権限を要求するようになった（perMachine）。証明書をこの端末の信頼ストアへ入れる必要があるため。ビルドは DLL とパッケージの生成を含む一続きの手順になった。",
+      "decisions": [
+        "インストーラを管理者権限へ切り替えた。MSIX のサイドロードは、署名した証明書が端末の信頼ストアにあることを求める。利用者のストアへ入れるだけでは 0x800B0109 で弾かれる。",
+        "パッケージの出力先を release から packaging へ移した。release は配布物の出力先であり、そこへ置くと同梱の参照が循環するため。",
+        "登録スクリプトは同じフォルダに置かれた一式を参照する形にした。インストール先が変わっても、相対の位置関係だけで完結する。",
+        "旧来のレジストリ方式も併せて登録する。Windows 10 には新しいメニューが無く、そちらでは旧方式だけが効くため。両方が入った Windows 11 では、新しいメニューと「その他のオプション」の両方に出る。",
+        "新しいメニューの登録が失敗してもインストールは続ける。PowerShell が使えない環境や、証明書の登録が拒まれた場合でも、旧方式は動くため全体を止める理由がない。"
+      ],
+      "verification": [
+        "npm run build:win が DLL の作成、パッケージの署名、インストーラの生成まで通ることを確認",
+        "配布物に ZipperShell.dll / ZipperShell.msix / ZipperDev.cer / 登録スクリプト 2 本が同梱されることを確認",
+        "インストーラが perMachine で生成されることを確認"
+      ],
+      "concerns": [
+        "実際のインストールは未実行。UAC の承認、証明書の登録、パッケージの登録が通しで動くかは、インストーラを走らせて確かめる必要がある。",
+        "自己署名証明書を端末の信頼ストアへ入れることは、その証明書で署名された他のものも信頼することを意味する。配布する場合はこの点を伝える必要がある。",
+        "アンインストールでは証明書も取り除くが、他の用途で同じ証明書を使っていた場合はまとめて消える。"
+      ]
+    },
+    {
+      "date": "2026-09-03",
+      "title": "Windows 11 の新しい右クリックメニューへ載せる仕組みを用意",
+      "files": [
+        "native/shellext/ExplorerCommand.h",
+        "native/shellext/ExplorerCommand.cpp",
+        "native/shellext/dllmain.cpp",
+        "native/shellext/ZipperShell.def",
+        "native/shellext/build.bat",
+        "packaging/AppxManifest.xml",
+        "packaging/make-package.ps1",
+        "packaging/install-package.ps1",
+        "packaging/uninstall-package.ps1",
+        "scripts/make-icon.mjs",
+        "electron-builder.yml",
+        ".gitignore"
+      ],
+      "summary": "IExplorerCommand を実装した COM の DLL を C++ で書き、外皮だけのパッケージ（スパースパッケージ）として署名するところまでを用意した。これにより「その他のオプションを表示」の中ではなく、右クリックの 1 階層目に項目を出せる。",
+      "purpose": "旧来のレジストリ方式では Windows 11 の新しいメニューに載らないため。新しいメニューはパッケージ化されたアプリの COM ハンドラしか受け付けない。",
+      "impact": "C++ のビルド環境が必要になった。DLL は resources/shell へ、パッケージと証明書は配布物へ同梱する。旧来のレジストリ方式は Windows 10 向けに残す。",
+      "decisions": [
+        "識別子は 1 つだけ用意し、選択されたものが書庫かどうかで出す項目を切り替える。解凍用と圧縮用で識別子を分けると、マニフェストと登録が二重になるため。",
+        "選択物は GetTitle と GetState で渡されるので控えておき、EnumSubCommands で使う。この呼び出しには選択物が渡らない決まりのため。",
+        "コマンドラインの上限に触れないよう、渡す引数が長くなったらそこで一度起こし、残りを次へ回す。起動側で 1 つの要求へまとめる仕組みが既にあるため、分かれても結果は変わらない。",
+        "パッケージは実体を含めない外皮だけの形にした。本体はインストール先に置いたままで、登録時に場所を教える。同じ内容を二重に配布せずに済む。",
+        "署名には自己署名証明書を使う。正式なコード署名証明書は有償で、個人の配布には見合わないため。"
+      ],
+      "verification": [
+        "C++ の DLL がビルドできることを確認（134KB）",
+        "エクスポートが DllGetClassObject と DllCanUnloadNow の 2 つであることを dumpbin で確認",
+        "makeappx でパッケージ化し、signtool で署名できることを確認",
+        "パッケージの登録は、証明書がこの端末の信頼ストアにある必要があることを確認。利用者のストアへ入れただけでは 0x800B0109 で弾かれる"
+      ],
+      "concerns": [
+        "パッケージの登録には管理者権限が要る。証明書をこの端末の信頼ストアへ入れるため。エクスプローラー上での実際の表示は、その登録を済ませてからでないと確認できない。",
+        "自己署名証明書を信頼させることは、その証明書で署名された他のものも信頼することを意味する。配布にあたっては利用者へこの点を伝える必要がある。",
+        "インストーラからの自動登録は未実装。現状は同梱したスクリプトを管理者として実行してもらう形。",
+        "旧来のレジストリ方式と併存させるかは未決。両方を登録すると、新しいメニューと「その他のオプション」の両方に出る。"
+      ]
+    },
+    {
+      "date": "2026-09-03",
+      "title": "右クリックのサブメニューが開かずエラーになる不具合を修正",
+      "files": [
+        "src/main/shell/buildRegistryScript.ts"
+      ],
+      "summary": "ExtendedSubCommandsKey の値を HKEY_CLASSES_ROOT からの相対に直した。これによりサブメニューが開くようになり、押したときの「関連付けられたアプリがありません」も解消した。",
+      "purpose": "報告された不具合の解消。",
+      "impact": "書庫とファイルの右クリックで、Zipper の下に操作の一覧が開くようになる。",
+      "decisions": [
+        "ExtendedSubCommandsKey は HKEY_CLASSES_ROOT からの相対で書く必要がある。HKCU からの相対（Software\\Classes\\Zipper.ExtractMenu）で書いていたため、Windows がサブメニューを見つけられず、代わりに 1 段目をコマンドとして実行しようとして失敗していた。この入口には command サブキーが無いため、関連付けが無いという案内が出ていた。"
+      ],
+      "verification": [
+        "npm run typecheck / npm run build / npm run build:win 通過",
+        "登録して値が ExtendedSubCommandsKey=\"Zipper.ExtractMenu\" になることを確認",
+        "HKEY_CLASSES_ROOT\\Zipper.ExtractMenu\\shell 配下に 4 項目とそれぞれの command が引けることを確認",
+        "解除で残骸が消えることを確認"
+      ],
+      "concerns": [
+        "エクスプローラー上での実際の表示は手動確認が必要。レジストリの内容までしか自動検証できていない。",
+        "Windows 11 の新しい右クリックメニューへ直接載せるには、IExplorerCommand を実装した COM の DLL とスパースパッケージによる登録が要る。環境を調べたところ Visual Studio Build Tools と Windows SDK は入っているが、C++ のワークロードが未導入のため、着手するにはその追加が前提になる。"
+      ]
+    },
+    {
+      "date": "2026-09-03",
+      "title": "複数選択と分割書庫の解凍を修正",
+      "files": [
+        "src/main/shell/buildRegistryScript.ts",
+        "src/main/sevenzip/volumeSets.ts",
+        "src/main/sevenzip/extractBatch.ts",
+        "src/main/ipc/archive/task/extractIpc.ts",
+        "src/main/ipc/schemas.ts",
+        "src/renderer/hooks/useExtract.ts",
+        "src/renderer/app/useLaunchIntent.ts",
+        "src/renderer/app/useShellLaunch.ts",
+        "src/renderer/app/buildTaskView.ts",
+        "src/renderer/components/TaskProgressDialog/index.tsx",
+        "src/renderer/App.tsx",
+        "src/shared/types.ts",
+        "src/shared/ipc.ts",
+        "src/preload/index.ts"
+      ],
+      "summary": "複数の書庫を選んで解凍しても 1 つしか処理されない不具合と、分割書庫が右クリックに現れない不具合を直した。解凍は書庫を開かずに、選ばれたものを順に処理する形へ変えた。",
+      "purpose": "報告された 2 つの不具合を解消する。",
+      "impact": "シェルからの解凍は extractBatch を通る。書庫を開かないため、まとめて選んでもタブが増えない。進捗には何番目の書庫を処理しているかが含まれる。",
+      "decisions": [
+        "原因は 3 つあった。分割書庫の .001 が対応拡張子に無いこと、サブメニュー化の際に MultiSelectModel を書き落としたこと、受け取った複数のパスのうち先頭しか使っていなかったこと。",
+        "MultiSelectModel は Player を指定した。複数を選んでも 1 度だけ起動して全件を受け取れるため、起動を待ち合わせる必要がない。",
+        "解凍では書庫を開かないことにした。まとめて選んだ数だけタブが開くのは操作の邪魔になり、そもそも解凍に一覧は要らないため。",
+        "分割書庫は先頭の巻だけを処理し、続きの巻は落とす。7-Zip が自動で読み継ぐため、重ねて渡すと同じ中身を何度も取り出してしまう。RAR の .partN.rar も同じ扱いにした。",
+        "1 つが失敗しても残りは続ける。まとめて選んだうちの 1 つが壊れていただけで全部が止まると、どこまで処理されたのか分からなくなるため。すべて失敗した場合だけ、まとめて失敗として扱う。"
+      ],
+      "verification": [
+        "npm run typecheck / npm run build 通過",
+        "分割書庫を 7z と zip の両方で作り、.001 から一覧と展開ができることを確認（一覧 6 件、展開 6 件）",
+        "続きの巻を落とす判定を 3 パターンで確認（連番、RAR の partN、通常のファイル）",
+        "5 つの書庫をまとめて処理し、続きの巻が除かれ、壊れた 1 件を飛ばして残り 3 件が取り出されることを確認。日本語・韓国語・分割書庫の中身がすべて揃った",
+        "進捗に書庫の位置（1/4、2/4、3/4）が含まれることを確認",
+        "レジストリに .001 の入口と MultiSelectModel が書かれることを確認"
+      ],
+      "concerns": [
+        "7z 形式の分割書庫では、一覧でフォルダがファイルとして表示される。7-Zip が Split 経由で属性を返さないためで、展開の結果には影響しない。",
+        "MultiSelectModel の Player はコマンドラインの長さに上限がある。多数を一度に選ぶと Windows 側が分割して起動する可能性があるが、起動の集約が働くため処理自体は続く。",
+        "まとめて解凍したときの上書き確認は行わない。書庫ごとに宛先が変わるため、事前の確認が煩雑になる。既定の上書きで進む。"
+      ]
+    },
+    {
+      "date": "2026-09-03",
+      "title": "インストーラでの自動登録と、進行中の詳細表示",
+      "files": [
+        "src/main/shell/applyIntegration.ts",
+        "src/main/index.ts",
+        "src/main/ipc/shellIpc.ts",
+        "build/installer.nsh",
+        "electron-builder.yml",
+        "src/main/sevenzip/parseTaskOutput.ts",
+        "src/main/sevenzip/progressReporter.ts",
+        "src/main/sevenzip/extractArchive.ts",
+        "src/main/sevenzip/createArchive.ts",
+        "src/main/sevenzip/testArchive.ts",
+        "src/main/sevenzip/modifyArchive.ts",
+        "src/main/ipc/archive/task/**",
+        "src/renderer/components/TaskProgressDialog/**",
+        "src/renderer/lib/taskTiming.ts",
+        "src/renderer/hooks/**",
+        "src/renderer/App.tsx",
+        "src/shared/types.ts",
+        "README.md"
+      ],
+      "summary": "インストーラの実行時にエクスプローラー連携を自動で登録し、アンインストール時に解除するようにした。あわせて、展開や圧縮の間の表示を、進み具合・件数・ファイル名・時間・記録を並べた専用の窓に置き換えた。",
+      "purpose": "登録を利用者の手作業に頼らずに済ませる。また、何をどこまで処理しているのかを、細い帯ではなく落ち着いて追える形で示す。",
+      "impact": "進捗の通知が数値ひとつから TaskProgress へ変わった。展開・圧縮・検証・書き換えのすべてが同じ形の進捗を流す。実行中の表示は専用の窓が受け持ち、下端の帯は終わった結果だけを扱う。",
+      "decisions": [
+        "インストーラからはアプリ自身を --register-shell 付きで呼ぶ。登録内容の定義はアプリが持っており、NSIS 側に書き写すと二重管理になるため。アンインストールも同じ経路で解除する。",
+        "登録専用の起動では単一インスタンスの仕組みに乗せない。既存の窓へ要求が流れてしまい、インストーラが待っているプロセスが即座に終わってしまうため。",
+        "7-Zip に -bb1 を追加した。これが無いと処理中のファイル名が出力に現れず、どこまで進んだかを名前で示せないため。",
+        "進み具合・件数・ファイル名は別々の行に現れ、毎回すべてが揃うわけではない。直前の値を保って届いた分だけを更新する形にした。",
+        "残り時間は経過時間と進み具合からの粗い見積もりとし、始まったばかりのうちは表示しない。根拠の薄い数字を出しても迷わせるだけのため。",
+        "一時停止は用意しない。7-Zip の処理を途中で止めるにはプロセスの中断が要り、Node からは扱えないため。中止のみを置く。"
+      ],
+      "verification": [
+        "npm run typecheck / npm run build / npm run build:win 通過。installer.nsh を含めてインストーラが生成されることを確認",
+        "--register-shell と --unregister-shell を実行し、画面を出さずに登録と解除が行われることを確認",
+        "7-Zip の出力からの読み取りを 5 パターンで確認（進捗のみ、進捗と件数、ファイル名、複数行の混在、無関係な行）",
+        "7 ファイルの書庫を展開し、8 回の通知すべてで進み具合・件数・ファイル名が正しく揃うことを確認",
+        "165MB を展開しながら実機の表示を追い、120ms 後に 16% [1/6]、250ms 後に 50% [3/6]、400ms 後に 82% [4/6] と、時間と記録が伴って更新されることを確認"
+      ],
+      "concerns": [
+        "Windows 11 の新しい右クリックメニューへ直接載せるには IExplorerCommand の実装が必要で、引き続き旧方式のまま。登録した項目は「その他のオプションを表示」の中に入る。",
+        "インストーラ経由の自動登録は、実際にインストールしての確認をしていない。登録処理そのものは単体で検証済み。",
+        "残り時間は一定の速さで進む前提の見積もりで、処理の内容によっては大きく外れる。",
+        "記録に残す行は 300 件までとした。それを超える書庫では古い行から消える。"
+      ]
+    },
+    {
+      "date": "2026-09-02",
+      "title": "右クリックメニューの拡充と、アプリ内メニューの追加",
+      "files": [
+        "src/main/shell/buildRegistryScript.ts",
+        "src/main/shell/notifyShell.ts",
+        "src/main/ipc/shellIpc.ts",
+        "src/main/window/launchIntent.ts",
+        "src/renderer/components/ArchiveTable/RowContextMenu.tsx",
+        "src/renderer/app/useRowMenu.ts",
+        "src/renderer/app/useShellLaunch.ts",
+        "src/renderer/app/useLaunchIntent.ts",
+        "src/renderer/hooks/useCompress.ts",
+        "src/renderer/hooks/useVerify.ts",
+        "src/renderer/App.tsx",
+        "src/shared/types.ts",
+        "src/shared/ipc.ts",
+        "README.md"
+      ],
+      "summary": "エクスプローラーの右クリックをサブメニュー構成に作り替え、解凍と圧縮の選択肢を増やした。あわせて、アプリ内の一覧でも右クリックで操作できるようにした。",
+      "purpose": "右クリックから直接「ここに解凍」「フォルダに分けて解凍」を選べるようにする。また、一覧の行に対する操作が右クリックから届かない状態を解消する。",
+      "impact": "起動引数の種類が 3 から 7 に増えた。解凍先の決め方と圧縮の形式は、選ばれた項目で決まる。アプリ内の行操作は useRowMenu に集約し、右クリックとダブルクリックが同じ経路を通る。",
+      "decisions": [
+        "エクスプローラーの項目は ExtendedSubCommandsKey によるサブメニューにした。操作が 4 つあり、1 段目に並べると右クリックが縦に伸びて他のアプリの項目を押しにくくするため。",
+        "「ここに解凍する」と「ZIP に圧縮する」は確認を挟まず即座に書き出す。右クリックから選んだ時点で意図が定まっており、そこから更にダイアログを出すのは冗長なため。",
+        "レジストリの更新後に SHChangeNotify を呼ぶ。書いただけでは動作中のエクスプローラーが読み直さず、項目が現れないことがあるため。Node から直接呼べないため PowerShell を経由する。",
+        "解除では以前の版のキー（Zipper.Extract / Zipper.Compress）も対象に含める。名前を変えたため、古い項目が取り残されるのを防ぐ。",
+        "useVerify は対象の書庫を引数で受け取る形にした。呼び出し側が毎回パスとパスワードを渡す必要がなくなり、同じ組み立てが 2 箇所に散らばるのを防げる。"
+      ],
+      "verification": [
+        "npm run typecheck / npm run build 通過",
+        "起動引数 7 種類（なし・extract・extract-here・extract-to-folder・compress・compress-zip・compress-7z）の解釈を確認",
+        "実際に登録して reg export で内容を確認。サブメニューの入口（MUIVerb と ExtendedSubCommandsKey）、解凍 4 項目、圧縮 3 項目のコマンドが正しいことを確認。解除で残骸が消えることも確認",
+        "アプリ内で行に contextmenu を送り、メニューが開いて 7 項目が並ぶことを実機で確認"
+      ],
+      "concerns": [
+        "エクスプローラー上での実際の表示は手動確認が必要。レジストリの内容までしか自動検証できていない。",
+        "登録は利用者が設定画面から行う必要がある。インストールしただけでは登録されない。",
+        "「ZIP に圧縮する」は対象と同じ場所へ書き出すため、書き込み権限の無い場所では失敗する。失敗は進捗表示に出る。",
+        "Windows 11 の新しい右クリックメニューへ直接載せるには COM の実装が必要で、引き続き未着手。"
+      ]
+    },
+    {
+      "date": "2026-09-02",
+      "title": "GitHub Releases を見に行く自動更新",
+      "files": [
+        "src/main/updater/updateService.ts",
+        "src/main/ipc/updateIpc.ts",
+        "src/renderer/hooks/useUpdater.ts",
+        "src/renderer/components/UpdateBanner/index.tsx",
+        "src/renderer/components/SettingsDialog/index.tsx",
+        "src/renderer/app/DialogStack.tsx",
+        "src/renderer/App.tsx",
+        "src/shared/ipc.ts",
+        "src/shared/types.ts",
+        "src/preload/index.ts",
+        "electron-builder.yml",
+        "package.json",
+        "GithubPush.bat",
+        "README.md"
+      ],
+      "summary": "electron-updater を用いて、GitHub の Releases から最新版を確認する仕組みを入れた。新しい版があれば画面上部で知らせ、取得と再起動は利用者の操作で行う。設定画面からは現在の版の表示と手動確認ができる。",
+      "purpose": "配布後に手作業で入れ直さずに済むようにする。",
+      "impact": "electron-builder.yml に publish 設定を加えたことで、ビルド時に latest.yml が生成されるようになった。この目録が Releases に無いと配布済みのアプリは更新を見つけられないため、GithubPush.bat が インストーラ・blockmap・latest.yml の 3 点を送る。",
+      "decisions": [
+        "autoDownload を無効にし、取得は利用者が決めてから始める。起動しただけで回線を使い、意図しない通信が起きることを避けるため。",
+        "確認は起動から 4 秒後に一度だけ行う。画面の準備を優先し、開いた直後の操作を妨げないため。",
+        "開発モードでは確認そのものを行わず、状態として unavailable-in-dev を返す。配布物としての体裁が無く判定できないため、失敗として扱うと紛らわしい。",
+        "electron-builder には --publish never を指定した。公開は gh CLI 側に任せ、ビルドと公開の責任を分けるため。",
+        "blockmap も Releases へ送る。差分だけを取得できるようになり、160MB を毎回落とさずに済む。"
+      ],
+      "verification": [
+        "npm run typecheck 通過",
+        "npm run build:win を実行し、インストーラ（160MB）、blockmap、latest.yml の 3 点が生成されることを確認",
+        "latest.yml にバージョン・ファイル名・sha512・サイズが正しく書かれていることを確認",
+        "GithubPush.bat が 3 点を送る形になっていること、latest.yml が無い場合に警告を出すことを確認"
+      ],
+      "concerns": [
+        "実際の更新動作は未検証。ある版を配布したうえで、より新しい版を Releases に置いて初めて確かめられるため。仕組みとして必要なファイルが揃っていることまでは確認済み。",
+        "インストーラは 160MB ある。Electron の実行環境と同梱の 7-Zip、日本語フォントを含むため。差分更新が効けば 2 回目以降の負担は下がる。",
+        "コード署名を行っていないため、インストーラの実行時に SmartScreen の警告が出る。署名証明書を用意する場合は electron-builder.yml への設定が必要。"
+      ]
+    },
+    {
+      "date": "2026-09-02",
+      "title": "実行用バッチファイルの追加と、他製品名の除去",
+      "files": [
+        "起動.bat",
+        "InstallerMake.bat",
+        "GithubPush.bat",
+        "project_style.json",
+        "README.md"
+      ],
+      "summary": "コマンドを打たずに扱えるよう、起動・インストーラ作成・GitHub 公開の 3 つを バッチファイルとして用意した。あわせて project_style.json に残っていた他製品名を除いた。",
+      "purpose": "開発と配布の手順を、ダブルクリックで完結する形にする。",
+      "impact": "起動.bat と InstallerMake.bat は初回に必要な準備（依存の導入、7-Zip の取得、アイコン生成）を自動で行うため、事前の手作業が要らない。GithubPush.bat は https://github.com/KisaragiIchigo/zipper を対象に、コミットから Releases への公開までを通す。",
+      "decisions": [
+        "バッチファイルは cp932 で保存する。cmd.exe の既定コードページで読ませ、chcp を切り替えずに日本語を表示するため。",
+        "Releases への公開は GitHub CLI に任せる。認証を自前で扱わずに済み、gh auth login だけで完結するため。未導入の場合は導入手順を示して終了する。",
+        "同じタグの Releases が既にある場合は作成ではなく差し替え（gh release upload --clobber）に切り替える。作り直しのたびに手で消す手間を省くため。",
+        "インストーラが無い状態で GithubPush.bat を実行した場合、その場で作るかを尋ねる。push だけ済ませて公開を忘れる事態を避ける。"
+      ],
+      "verification": [
+        "3 つとも cp932 として正しく読めることを確認",
+        "GithubPush.bat を実行し、GitHub CLI 未導入を検出して導入手順を表示することを確認",
+        "起動.bat と InstallerMake.bat は重い処理を差し替えた写しで実行し、分岐と表示、package.json からのバージョン取得（0.1.0）を確認",
+        "project_style.json および全ソースに他製品名が残っていないことを確認"
+      ],
+      "concerns": [
+        "Python から書き出す際、パス中の \u0007 が 8 進エスケープとして解釈され 7-Zip の有無判定が常に偽になる不具合があった。区切り文字を印で置いてから差し替える方式に変更して解消済み。",
+        "GithubPush.bat の実際の push と Releases への公開は未実行。GitHub CLI が未導入のため、認証以降の経路は確認できていない。",
+        "インストーラのファイル名は electron-builder.yml の artifactName に依存する。命名規則を変える場合は GithubPush.bat の INSTALLER も合わせて直す必要がある。"
+      ]
+    },
+    {
+      "date": "2026-09-02",
+      "title": "日常の道具として足りない 12 機能の実装",
+      "files": [
+        "src/main/sevenzip/openEntry.ts",
+        "src/main/sevenzip/previewEntry.ts",
+        "src/main/sevenzip/testArchive.ts",
+        "src/main/sevenzip/modifyArchive.ts",
+        "src/main/sevenzip/createSelfExtracting.ts",
+        "src/main/encoding/decodeText.ts",
+        "src/main/settings/**",
+        "src/main/window/windowState.ts",
+        "src/main/ipc/archive/task/**",
+        "scripts/make-icon.mjs",
+        "build/icon.ico",
+        "src/renderer/hooks/useArchiveTabs.ts",
+        "src/renderer/hooks/usePreview.ts",
+        "src/renderer/hooks/useVerify.ts",
+        "src/renderer/hooks/useModifyArchive.ts",
+        "src/renderer/hooks/useVirtualRows.ts",
+        "src/renderer/components/**",
+        "src/renderer/app/**",
+        "src/renderer/lib/**",
+        "README.md"
+      ],
+      "summary": "書庫を開くだけの状態から、日常的に使える道具にするための 12 機能を実装した。ダブルクリックでの閲覧、絞り込み、設定の保存、アプリアイコン、フォルダ階層、キーボード操作、展開先の定型、整合性の確認、書庫への追加と取り除き、その場でのプレビュー、自己解凍書庫、タブによる複数書庫。",
+      "purpose": "解凍と圧縮の処理は揃っていたが、その周りの操作性が欠けていたため。",
+      "impact": "書庫の状態は useArchiveTabs がタブ単位で保持する形になった。時間のかかる作業は task/runner が中断と進捗を一元管理し、各操作はそれを共有する。設定は userData/settings.json に保存され、ウィンドウの位置と大きさ、テーマが復元される。",
+      "decisions": [
+        "一覧に仮想スクロールを入れた。20233 ファイルの書庫で描画に 3 秒かかりメインスレッドが止まることを実測したため。行の高さが一定なら位置は掛け算で決まるので、ライブラリは使わず自前で書いた。",
+        "閲覧のために取り出したファイルは終了時にまとめて消す。開いたアプリが掴んでいる間は消せないため、その場での削除はできない。",
+        "設定ファイルは Zod で検証し、壊れていても既定へ落として起動を止めない。利用者が手で書き換えられる外部入力であるため。",
+        "保存されたウィンドウ位置は、いまの画面構成に収まるかを確かめてから使う。外付けモニタを外した後に見えない場所へ出るのを防ぐ。",
+        "アプリアイコンは外部ツールに頼らず、zlib だけで PNG と ICO を生成するスクリプトを書いた。project_style.json のアクセント色をそのまま使うため、色の一貫性が保てる。",
+        "絞り込み中はフォルダの階層をたどらず、書庫全体を平らに並べる。探している最中に階層をまたぐ操作は意味を持たないため。",
+        "自己解凍書庫は 7z.sfx の後ろに 7z 書庫を連結して作る。分割との併用はできないため、指定時は分割を無効にする。",
+        "タブは開き直しに要る条件をタブごとに抱えるため、切り替えでは読み込みが走らない。同じ書庫を二重に開かず、既にあるタブへ移る。"
+      ],
+      "verification": [
+        "npm run typecheck / npm run build 通過",
+        "設定の保存と読み出し、壊れた設定ファイルからの復帰、画面外の位置を捨てる判定を確認",
+        "整合性テスト: 正常・CRC 破損（個別ファイルを特定）・書庫破損（corrupted と分類）・非書庫の 4 種で判別を確認",
+        "書庫への追加と取り除き: 日本語名のファイルを足して消す往復を確認。書き換えできない形式の判定も確認",
+        "自己解凍書庫: 生成した exe が 7z 書庫として読め、中身が保たれることを確認",
+        "プレビュー: テキストの文字コード判定と画像の分類を確認",
+        "フォルダ階層・パンくず・展開先の定型（分割書庫の .001 を含む）を確認",
+        "アイコンを実際に描画して目視で確認",
+        "構造整理後の回帰: 日本語・韓国語・曖昧バイト列の書庫で、階層表示と補正表示が保たれることを確認"
+      ],
+      "concerns": [
+        "ダブルクリック・プレビュー・タブ・追加削除の UI 操作そのものは実機で未確認。処理側は個別に検証済みだが、画面での操作は手動確認が必要。",
+        "書庫への追加は最上位にしか置けない。7-Zip のコマンドでは書庫内の格納先を指定できないため。",
+        "仮想化は行の高さが一定であることに依存する。コンパクト表示を切替式にする場合は位置の算出をやり直す必要がある。",
+        "プレビューは画像 32MB、テキスト 2MB を上限とする。超える場合は展開を促す。",
+        "自己解凍書庫は Windows 向けの実行部のみ。他の環境では展開できない。"
+      ]
+    },
+    {
+      "date": "2026-09-02",
+      "title": "オーケストレーション構成への再編と一覧の仮想化",
+      "files": [
+        "src/renderer/App.tsx",
+        "src/renderer/app/**",
+        "src/main/ipc/archive/**",
+        "src/main/sevenzip/listArchive.ts",
+        "src/main/sevenzip/listing/**",
+        "src/renderer/components/ArchiveTable/**",
+        "src/renderer/components/CompressDialog/**",
+        "src/renderer/hooks/useVirtualRows.ts",
+        "src/renderer/hooks/useCompress.ts",
+        "src/renderer/hooks/compress/archiveName.ts",
+        "src/renderer/hooks/useArchive.ts",
+        "README.md"
+      ],
+      "summary": "肥大化した 5 つのファイルを、オーケストレータと step へ分割した。あわせて一覧に仮想スクロールを導入し、大量エントリの書庫でも操作できるようにした。",
+      "purpose": "責務の交差を解消し、次の変更で影響範囲を読み切れる構造へ戻す。一覧の描画は実測でメインスレッドを止めていたため、同時に手を入れた。",
+      "impact": "App.tsx と listArchive.ts と archiveIpc.ts は、各段を宣言順に呼ぶだけの本体になった。派生値の算出は純粋関数、副作用は useXxx へ移したため、変更時に読む範囲が段単位に閉じる。",
+      "decisions": [
+        "App.tsx から補助コンポーネント・起動要求の振り分け・展開要求の組み立て・表示状態の変換・3 つの副作用を app/ 配下へ出した。236 行から 117 行になり、残りはほぼ JSX の宣言となった。",
+        "archiveIpc.ts は一覧 / 長時間タスク / ダイアログの 3 つに割った。変更理由が 5 つ同居しており、どれを直すにも全体を読む必要があったため。中断用の AbortController は taskIpc のクロージャに閉じ込め、共有範囲を狭めた。",
+        "書庫のパス算出は useArchive へ移した。状態から一意に決まる派生値であり、利用側それぞれで組み立てる筋合いがないため。",
+        "仮想スクロールはライブラリを入れず自前で書いた。行の高さが固定なら位置は掛け算で決まり、各行を計測する仕組みが要らないため。行高の定数は columns.ts に置き、見出しと行と仮想化で同じ値を参照する。",
+        "ArchiveTable の分割では、列定義・見出し・行・選択操作を分けた。仮想化を足すと本体がさらに膨らむため、先に責務を分けてから組み込んだ。"
+      ],
+      "verification": [
+        "npm run typecheck / npm run build 通過",
+        "20233 ファイル・665MB の書庫（node_modules を無圧縮で固めたもの）で実測。仮想化の前後で、描画完了が 3006ms から 1041ms、スクロール 20 回が 274ms から 6ms、DOM の行数が 22104 から 34 になった",
+        "Main 側の一覧取得は 22104 エントリで 168ms（7z 実行 120ms + 解析 68ms + セントラルディレクトリ読み取り 20ms）",
+        "リファクタ後の回帰確認: 日本語 ZIP・韓国語 cp949・簡体中国語 cp936・曖昧バイト列・LZH・7z の 6 種で、分割前と同じ結果になることを確認",
+        "小さい書庫（6 件・3 件）で全行が描画されること、すなわち仮想化が行を取りこぼさないことを確認",
+        "全ソースが 200 行未満に収まっていることを確認（最大は型定義の集約である types.ts の 184 行）"
+      ],
+      "concerns": [
+        "仮想化は行の高さが一定であることに依存する。行高を可変にする場合は位置の算出をやり直す必要がある。",
+        "一覧はフラット表示のまま。フォルダ階層をたどる表示は未実装。",
+        "ArchiveTable の選択操作は実機での確認をしていない。Ctrl / Shift の挙動は型と実装の読み合わせまで。"
+      ]
+    },
+    {
+      "date": "2026-09-02",
+      "title": "フェーズ3: シェル統合（レジストリ方式）",
+      "files": [
+        "src/main/shell/registry.ts",
+        "src/main/shell/buildRegistryScript.ts",
+        "src/main/ipc/shellIpc.ts",
+        "src/main/window/launchIntent.ts",
+        "src/main/index.ts",
+        "src/main/ipc/registerIpcHandlers.ts",
+        "src/renderer/hooks/useShellIntegration.ts",
+        "src/renderer/components/SettingsDialog/index.tsx",
+        "src/renderer/components/TitleBar/index.tsx",
+        "src/renderer/App.tsx",
+        "src/shared/types.ts",
+        "src/shared/ipc.ts",
+        "src/preload/index.ts"
+      ],
+      "summary": "HKCU へのレジストリ登録による右クリックメニューと「プログラムから開く」への登録を実装した。書庫には「Zipper で展開」、ファイルとフォルダには「Zipper で圧縮」が追加される。設定画面から登録と解除ができ、起動引数 --extract / --compress を解釈して対応する画面へ進む。",
+      "purpose": "エクスプローラーから直接 Zipper を呼べるようにする。",
+      "impact": "起動引数の扱いが LaunchIntent に統一された。右クリックの「圧縮」は選択ごとに別プロセスが起動するため、launchIntent が 400ms の猶予で 1 つの要求へ集約する。",
+      "decisions": [
+        "既定のアプリは変更しない。Windows 8 以降、拡張子の既定は UserChoice がハッシュで保護されており、プログラムから書き換えても無効化されるため。OpenWithProgids への登録に留め、既定にするかは利用者が Windows の設定で選ぶ。",
+        "右クリックの項目は SystemFileAssociations の下に置く。ProgID の下に置くと既定の関連付けを持つアプリでしか出ないため、既定を奪わずに項目だけを足せるこちらを選んだ。",
+        "レジストリへの書き込みは reg.exe への直接指定ではなく .reg ファイルの取り込みで行う。コマンド文字列に含まれる引用符が Windows の引数解析と .reg の書式で二重にエスケープされ、直接指定では壊れやすいため。日本語のメニュー名を含むため UTF-16LE の BOM 付きで書き出す。",
+        "書き込み先は HKCU に限定した。管理者権限を要求せず、解除も同じ経路で完結するため。",
+        "複数選択は MultiSelectModel を Document とし、選択ごとの起動を単一インスタンスへ集約する方式を採った。まとめて 1 プロセスで受け取るには DropTarget の COM 実装が必要で、旧方式の範囲を超えるため。"
+      ],
+      "verification": [
+        "npm run typecheck / npm run build 通過",
+        "起動引数の解釈を検証: 素のパス、--extract、--compress、フラグのみ（null を返す）の各ケース",
+        "複数起動の集約を検証: 3 回に分かれて届いた要求が 1 つにまとまり、重複が除かれ、取得後は消費されることを確認",
+        "実際に HKCU へ登録し、reg query で ProgID・open コマンド・展開項目・圧縮項目が書かれることを確認。reg export で吸い出して日本語のメニュー名が UTF-16 で正しく格納されていることも確認",
+        "解除を実行し、キーが消えて残骸が無いことを確認",
+        "設定画面を実機で開き、登録状態の表示、開発中の警告、既定のアプリに関する案内が出ることを確認"
+      ],
+      "concerns": [
+        "エクスプローラー上で実際に右クリックメニューが出るかは手動確認が必要。レジストリの内容までしか自動検証できていない。",
+        "Windows 11 では、これらの項目は右クリックの「その他のオプションを表示」の中に入る。新しいメニューへ載せるには IExplorerCommand を実装した COM DLL と MSIX パッケージ化が必要で、未着手。",
+        "開発中は electron.exe が登録される。設定画面で警告は出しているが、登録自体は妨げていない。",
+        "複数選択での圧縮は、選択数が多いと Windows 側が起動を抑制する可能性がある。件数の上限は未検証。"
+      ]
+    },
+    {
+      "date": "2026-09-02",
+      "title": "フェーズ2: 書庫の作成（圧縮）",
+      "files": [
+        "src/main/sevenzip/createArchive.ts",
+        "src/main/ipc/archiveIpc.ts",
+        "src/main/ipc/schemas.ts",
+        "src/renderer/hooks/useCompress.ts",
+        "src/renderer/components/CompressDialog/index.tsx",
+        "src/renderer/components/TaskBar/index.tsx",
+        "src/renderer/lib/taskView.ts",
+        "src/renderer/components/Toolbar/index.tsx",
+        "src/renderer/App.tsx",
+        "src/shared/types.ts",
+        "src/shared/ipc.ts",
+        "src/preload/index.ts"
+      ],
+      "summary": "ZIP と 7Z の作成を実装した。圧縮レベル、パスワード、暗号化方式、分割サイズを指定でき、進捗表示と中断に対応する。展開と共通の進捗表示を TaskBar として切り出した。",
+      "purpose": "解凍専用から、書庫の作成もできるアーカイバへ広げる。",
+      "impact": "進捗と中断の IPC を展開と圧縮で共通化した（archive:task-progress / archive:task-cancel）。展開と圧縮は同時に走らない前提で、Main 側の AbortController は 1 つを共有する。",
+      "decisions": [
+        "ZIP のパスワード保護は既定を AES-256 とした。7-Zip の既定である ZipCrypto は既知平文攻撃に弱く、実測でも -mem を指定しないと ZipCrypto になることを確認したため。互換性が必要な場合のみ利用者が選び直せる形にした。",
+        "圧縮の入口はツールバーのボタンとし、ドラッグ＆ドロップは「書庫を開く」のまま据え置いた。落としたファイルの種類で挙動が変わる設計は、利用者が結果を予測できず事故を招くため。",
+        "ファイルとフォルダの選択ダイアログを分けた。Windows では openFile と openDirectory を同時に指定できないため、設定ダイアログ内に追加ボタンを 2 つ置く形にした。",
+        "createArchive は作成したファイルの実体パスを返す。分割を指定すると 7-Zip は指定名ではなく連番付きのファイルを作るため、指定名のままでは追跡できない（実測で確認）。",
+        "「場所を開く」は対象がフォルダなら openPath、ファイルなら showItemInFolder を使う。圧縮の結果はファイルであり、openPath では関連付けられたアプリで開いてしまうため。"
+      ],
+      "verification": [
+        "npm run typecheck / npm run build 通過",
+        "7-Zip の圧縮オプションを実測し、-p のみでは ZipCrypto、-mem=AES256 で AES-256 になることを確認",
+        "ZIP / 7Z、圧縮レベル、AES-256、ヘッダ暗号化、分割の各ケースで書庫を作成し、作成した書庫を開き直して日本語ファイル名が保たれることを確認",
+        "20MB のデータで分割を検証し、3 ボリュームに分かれること、実体パスが .001 として解決されること、進捗が届くことを確認"
+      ],
+      "concerns": [
+        "CompressDialog の表示は実機で未確認。圧縮の開始にファイル選択ダイアログを挟むため、自動検証の経路に乗せられていない。圧縮処理そのものは実データで検証済み。",
+        "進捗は処理が短いと 0 のまま完了する。7-Zip が -bsp1 の出力を始める前に終わるためで、異常ではない。",
+        "書庫への追加や更新（既存の書庫にファイルを足す）は未実装。新規作成のみ。",
+        "シェル統合（右クリックメニュー・関連付け）は引き続き未着手。"
+      ]
+    },
+    {
+      "date": "2026-09-02",
+      "title": "展開時の上書き確認",
+      "files": [
+        "src/main/sevenzip/extractArchive.ts",
+        "src/main/sevenzip/applyRenames.ts",
+        "src/main/ipc/archiveIpc.ts",
+        "src/main/ipc/schemas.ts",
+        "src/renderer/components/ConflictDialog/index.tsx",
+        "src/renderer/hooks/useExtract.ts",
+        "src/renderer/App.tsx",
+        "src/shared/types.ts",
+        "src/shared/ipc.ts",
+        "src/preload/index.ts"
+      ],
+      "summary": "展開先に同名ファイルがある場合、展開前に検出して扱いを選ばせるようにした。上書き・既存を残す・両方残すの 3 択で、それぞれ 7-Zip の -aoa / -aos / -aou に対応する。",
+      "purpose": "無条件の上書きによるデータ損失を防ぐ。圧縮機能より先に塞ぐべき穴と判断した。",
+      "impact": "展開は必ず衝突チェックを経る。ArchiveEntry の path（表示名）を基準に判定するため、エンコーディングを補正した書庫でも利用者に見えている名前で確認できる。",
+      "decisions": [
+        "上書きの指定は -y ではなく -ao 系で行う。実測で -y があっても -aoa / -aos / -aou が優先されることを確認した。",
+        "衝突判定は 7-Zip 側の名前（sourcePath）ではなく表示名（path）で行う。利用者が画面で見ている名前と一致させるため。",
+        "applyRenames も上書きモードを受け取るようにした。補正が入った書庫では 7-Zip の重複判定が補正前の名前で行われるため、補正後の名前で初めて衝突する場合はリネーム段でしか気づけない。",
+        "skip を選んだ場合、リネーム段では 7-Zip が書き出した補正前の名前のファイルを削除する。残すと利用者にとって正体不明のごみになるため。",
+        "-aot（既存を別名にする）は選択肢に出さない。-aou との違いが利用者に伝わりにくく、誤選択の危険があるため。"
+      ],
+      "verification": [
+        "npm run typecheck / npm run build 通過",
+        "7-Zip の -aoa / -aos / -aou / -aot の挙動を実測し、-y との優先順位を確認",
+        "通常の書庫と補正が入った書庫の両方で、3 モードすべての結果を実データで確認",
+        "補正が入った書庫の skip で、7-Zip が書き出した補正前の名前のファイルが残らないことを確認"
+      ],
+      "concerns": [
+        "ConflictDialog の表示は実機で未確認。衝突を起こすにはフォルダ選択ダイアログを経由する必要があり、自動検証の経路に乗せられていない。ロジック側は検証済み。",
+        "衝突チェックは展開前の一度だけ行う。チェックから展開までの間に他のプロセスがファイルを作った場合は検出できない。",
+        "上書きモードは毎回問い直す。「以後すべてに適用」の記憶は未実装。"
+      ]
+    },
+    {
+      "date": "2026-09-02",
+      "title": "フェーズ1完了: UI への接続、展開処理、暗号化書庫への対応",
+      "files": [
+        "src/main/sevenzip/runSevenZip.ts",
+        "src/main/sevenzip/extractArchive.ts",
+        "src/main/sevenzip/applyRenames.ts",
+        "src/main/sevenzip/classifyFailure.ts",
+        "src/main/sevenzip/ArchiveFailure.ts",
+        "src/main/sevenzip/parseProgress.ts",
+        "src/main/ipc/archiveIpc.ts",
+        "src/main/window/pendingArchive.ts",
+        "src/main/sevenzip/resolveBinary.ts",
+        "src/preload/index.ts",
+        "src/renderer/**",
+        "src/shared/**",
+        "README.md"
+      ],
+      "summary": "書庫の一覧と展開を UI から操作できるようにした。ファイル一覧、並べ替え、複数選択、ドラッグ＆ドロップ、起動引数からのオープン、コードページの手動切り替え、パスワード入力、展開の進捗と中断、失敗理由の表示を実装した。",
+      "purpose": "フェーズ1の目標である「書庫を開いて中身を見て、取り出す」を利用可能な形にする。",
+      "impact": "書庫に関する操作はすべて archiveIpc を経由する。ArchiveEntry は表示用の path と 7-Zip 側の sourcePath を併せ持ち、エンコーディングを補正した書庫では展開後にリネームして両者を一致させる。",
+      "decisions": [
+        "runSevenZip の stdin を ignore に固定した。開いたままだとヘッダ暗号化書庫でパスワードプロンプトに入り、応答が来ないままタイムアウトまで固まる実バグがあったため。",
+        "7-Zip のパス解決を app.getAppPath() から __dirname 基準へ変更した。前者はエントリファイルの置き場所に左右され、解決先が状況によってずれるため。",
+        "起動引数で渡された書庫は Main が保持し、Renderer から取りに来させる pull 方式にした。did-finish-load 直後に送ると React の購読開始前に届いて取りこぼすため。",
+        "展開後にファイル名をリネームする工程を入れた。7-Zip は自身が解釈したコードページでファイルを書き出すため、補正した書庫では一覧の表示と展開後の実体が食い違う（実測で確認）。階層の深いものから順に処理し、各段階では自分の名前だけを差し替える。",
+        "展開のタイムアウトは経過時間ではなく無応答が続いた時間で判定する。大きな書庫では正常でも処理が数分に及ぶため。",
+        "展開時は -spd を付けてワイルドカード解釈を止める。付けないと角括弧を含むファイル名がパターンとして扱われ、取り出せない。"
+      ],
+      "verification": [
+        "npm run typecheck / npm run build 通過",
+        "UI 実機検証: 日本語 ZIP、韓国語 cp949 ZIP、曖昧バイト列 ZIP、パスワード付き ZIP、ヘッダ暗号化 7z、破損 ZIP、非書庫ファイル、LZH、TAR の 9 種を実際に開いて描画を確認",
+        "ヘッダ暗号化書庫でパスワードダイアログが出ること、破損書庫で警告バッジが出ること、非書庫ファイルで理由が表示されることを確認",
+        "展開検証: 全体展開・選択展開・正しいパスワード・誤ったパスワードの各ケースで、一覧の名前と展開された実体の名前が一致することを確認",
+        "補正が入った書庫（曖昧バイト列）で、リネーム導入前は展開結果が食い違い、導入後に一致することを確認",
+        "手書きの LZH で 7-Zip が cp932 のファイル名を正しく解釈することを確認"
+      ],
+      "concerns": [
+        "エンコーディング補正は ZIP 専用。生バイト列をセントラルディレクトリから読む仕組みのため、LZH や TAR には効かない。日本語環境の LZH は 7-Zip が正しく読むため実害は小さいが、他ロケールの LZH は化ける可能性がある。",
+        "パスワードは -p オプションでコマンドラインに乗るため、同一ユーザーのプロセス一覧から見える。stdin 経由で渡す方式は 7-Zip 側の対話入力の信頼性が確認できておらず未採用。",
+        "ファイル一覧は全件を素直に描画している。数万エントリの書庫では描画が重くなる可能性があり、仮想スクロールは未導入。実測してから判断する。",
+        "展開先に同名ファイルがある場合は -y で無条件に上書きする。上書き確認のダイアログは未実装。",
+        "書庫の作成（圧縮）とシェル統合（右クリックメニュー・関連付け）は未着手。"
+      ]
+    },
+    {
+      "date": "2026-09-02",
+      "title": "フェーズ1: 書庫の一覧取得とファイル名エンコーディング推定",
+      "files": [
+        "src/shared/types.ts",
+        "src/main/sevenzip/parseListing.ts",
+        "src/main/sevenzip/listArchive.ts",
+        "src/main/encoding/scoreDecoded.ts",
+        "src/main/encoding/detectFilenameEncoding.ts",
+        "src/main/zip/readZipFilenames.ts",
+        "scripts/fetch-7zip.mjs",
+        "README.md"
+      ],
+      "summary": "7z l -slt の出力パーサ、ZIP セントラルディレクトリからの生ファイル名取得、コードページ推定を実装し、実アーカイブ 9 種で検証した。7-Zip の取得スクリプトを公式ページのパースから MSI 実体の探索へ変更した。",
+      "purpose": "アーカイブ一覧の取得基盤を作り、他ロケールで作られた書庫のファイル名が化けないようにする。",
+      "impact": "listArchive が一覧取得の唯一の入口となる。ファイル名の解釈は 7-Zip の判定を第一とし、ArchiveInfo.encoding が null 以外の場合のみ自前判定で補正されたことを意味する。",
+      "decisions": [
+        "7-Zip 取得スクリプトは公式 download.html のパースをやめ、MSI の実体を当月から遡って HEAD リクエストで探す方式に変更した。ダウンロードページの掲載が 3 年前の 23.01 のままで、実際には 26.02 が公開されていたため。",
+        "-mcp によるコードページ指定は使わない。7-Zip 26.02 では -mcp=932 / 936 / 949 のいずれを指定しても結果が変わらず、実測で無効と確認したため。代わりに生バイト列を自前でデコードして名前を差し替える。",
+        "ファイル名の解釈は 7-Zip の自動判定を第一とし、自前判定は補正に徹する。当初は自前判定で全面的に置き換えたが、cp936 の中国語書庫と cp932 の「テスト文書」を逆に壊す退行が出たため。7-Zip 26 の判定は実測で cp932 / cp936 / cp949 を正しく読み分ける。",
+        "補正の発動条件は「7-Zip が返した名前の得点が 0 未満」かつ「自前判定が 2 点以上上回る」こと。7-Zip はシステムのコードページで一応読めてしまうバイト列をそのまま確定させるため、そこだけを埋める。",
+        "エントリの対応付けは 7-Zip の一覧とセントラルディレクトリの並び順が一致することに依拠する。件数が食い違う場合は補正を行わない。"
+      ],
+      "verification": [
+        "npm run typecheck 通過",
+        "実アーカイブ 9 種で検証: 日本語 cp932 ZIP、EFS 付き UTF-8 ZIP、韓国語 cp949 ZIP、簡体中国語 cp936 ZIP、7z 形式、および手書きの曖昧バイト列 3 種",
+        "7-Zip が誤読するケース（バイト列 b0a1b0a2 を半角カナ「ｰ｡ｰ｢」と解釈）を cp949 と判定し「가각.txt」へ補正できることを確認",
+        "補正が不要なケースでは一切介入せず、7-Zip の結果をそのまま用いることを全ケースで確認"
+      ],
+      "concerns": [
+        "listArchive はまだ IPC に接続しておらず、UI からは呼べない。次の作業で preload と Renderer へ配線する。",
+        "コードページの手動切り替え（override 引数）は実装済みだが、UI が未実装のため利用者は選べない。7-Zip の自動判定と自前補正の両方が外れた場合の逃げ道になるため、UI 側の対応が必要。",
+        "ZIP 以外の形式でファイル名が化けるケース（cp932 前提の LZH、エンコーディング指定を持たない TAR など）は未検証。",
+        "パスワード保護された書庫、ヘッダ暗号化された書庫、破損した書庫の挙動は未検証。"
+      ]
+    },
+    {
+      "date": "2026-09-02",
+      "title": "フェーズ0: Electron + React 基盤と 7-Zip 実行層の構築",
+      "files": [
+        "package.json",
+        "electron.vite.config.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "tsconfig.web.json",
+        "tailwind.config.ts",
+        "postcss.config.js",
+        "electron-builder.yml",
+        ".gitignore",
+        "scripts/fetch-7zip.mjs",
+        "src/main/**",
+        "src/preload/index.ts",
+        "src/renderer/**",
+        "src/shared/**",
+        "README.md",
+        "project_style.json"
+      ],
+      "summary": "Electron 44 + electron-vite 5 + Vite 7 + React 19 + Tailwind v3 の骨組みを構築した。Main / Preload / Renderer をプロセス分離し、テーマ状態と 7-Zip 可用性確認の IPC を通した。7-Zip を公式 MSI から取得して同梱するスクリプトと、asar 外へ配置する electron-builder 設定を用意した。",
+      "purpose": "フェーズ1（アーカイブの一覧表示と展開）の実装に入る前に、解凍エンジンの呼び出し経路・セキュリティ既定・デザイントークンの適用を確定させる。",
+      "impact": "以降のすべての機能は src/main/sevenzip/runSevenZip.ts 経由で 7z.exe を呼ぶ。Renderer への公開 API は src/shared/types.ts の ZipperApi に集約し、preload はその実装に徹する。",
+      "decisions": [
+        "Vite は 7 系に固定した。electron-vite 5 の peer 要件が vite ^5 || ^6 || ^7 で、最新の Vite 8 を受け付けないため。@vitejs/plugin-react も Vite 7 に対応する 5.2.0 を採用した。",
+        "キャプションボタンは自前描画せず Window Controls Overlay（titleBarStyle: hidden + titleBarOverlay）に任せた。自前描画では最大化ボタンのスナップレイアウトが失われるため。これに伴い window 制御の IPC は不要となり削除した。",
+        "macOS 固有の activate ハンドラを置かない。Windows 専用アプリであり、再登録により ipcMain.handle が二重登録になる不具合の温床になるため。",
+        "runSevenZip は常に -sccUTF-8 を前置する。これが無いと日本語環境で stdout が cp932 となり、ファイル名のパースが最初から破綻するため。",
+        "同梱 7-Zip の取得は公式 MSI の administrative install（msiexec /a）で行う。7-Zip 自身も管理者権限も不要で展開でき、卵と鶏の問題を回避できるため。"
+      ],
+      "verification": [
+        "npm run typecheck: Main 側・Renderer 側ともに通過",
+        "npm run build: 成功。out/main, out/preload, out/renderer を生成",
+        "ビルド済みアプリの起動検証: ライト・ダーク双方で描画を確認。body 背景 #f3f3f3 / #202020、アクセント #005fb8 / #60cdff、見出し Manrope、本文 IBM Plex Sans JP、タイトルバー高さ 40px がいずれも project_style.json の定義どおりに適用されていることを計算済みスタイルで確認した",
+        "CSP の script-src self が実際に効いていることを、executeJavaScript が eval 制限で失敗する挙動から確認した"
+      ],
+      "concerns": [
+        "7-Zip バイナリは未取得。npm run fetch:7zip は実装済みだが未実行のため、実際に MSI の展開が成功するかは未検証。StatusBar は現在エンジン未検出の警告を表示する状態が正しい挙動となる。",
+        "Renderer のバンドルは約 1.05MB、フォント資産を含めて約 8.8MB。@fontsource が woff2 と woff の両方を出力するため約 4.4MB が未使用の旧形式となっている。PostCSS 側で woff 参照の除去を試みたが、Vite の url 解決が PostCSS ユーザープラグインより先に走るため効果がなく、Electron 本体の規模に対して見合わないと判断して撤回した。",
+        "開発環境では ELECTRON_RUN_AS_NODE=1 が設定されている場合があり、その状態で electron を起動すると Node モードで動作して app が undefined になる。npm run dev では問題ないが、直接起動する際は env -u ELECTRON_RUN_AS_NODE が必要。",
+        "日本語ファイル名のエンコーディング判定はフェーズ1で実装する。7z.exe の -mcp オプションだけでは不十分な可能性が高く、実アーカイブでの検証が必須。"
+      ]
+    },
+    {
+      "date": "2026-09-02",
+      "title": "プロジェクト初期化とスタイルマニフェストの策定",
+      "files": [
+        "project_style.json",
+        "changelogs.json"
+      ],
+      "summary": "Windows 11 Fluent 準拠のスタイルマニフェストを新規作成し、変更履歴ファイルを初期化した。パレットは light/dark 二層構造とし、Fluent Design の公式カラートークン（SolidBackgroundFillColorBase、CardStrokeColorDefault、AccentTextFillColorPrimary 等）の実値を採用した。",
+      "purpose": "UI に触れるすべての後続タスクが参照する色・フォント・質感の単一情報源を確定させ、依頼ごとにデザインがぶれることを防ぐ。",
+      "impact": "以降のすべての UI 実装は本ファイルの palette / typography / texture / density / motion に従う。ここに無い色とフォントの直書き導入は規約違反として扱う。",
+      "decisions": [
+        "解凍エンジンは 7-Zip の CLI（7z.exe + 7z.dll）を同梱して Main プロセスから呼び出す方針とした。純 JS 実装では RAR / 7z / ISO / LZH / CAB のカバレッジが確保できないため。",
+        "7za.exe ではなく 7z.exe + 7z.dll のセットを同梱する。7za.exe は対応形式が 7z / zip / tar / gzip / bzip2 に限られるため。",
+        "タイポグラフィは display に Manrope、body と和文に IBM Plex Sans JP、数値表示に IBM Plex Mono を採用した。Windows 11 ネイティブ調でありながら Segoe UI 依存を避けるため。",
+        "Acrylic（backdrop-blur）は浮いている面に限定し、ファイルリスト本体には適用しない。高密度リストの可読性を優先するため。"
+      ],
+      "concerns": [
+        "7-Zip は LGPL だが RAR 展開部分に unRAR ライセンスの制限があり、RAR アーカイブの作成機能には使用できない。解凍のみであれば問題ないが、配布時にライセンス表記の同梱が必須。",
+        "Windows 11 の新コンテキストメニューへの登録には IExplorerCommand を実装した C++ 製 COM DLL と MSIX パッケージ化が必要で、Electron / Node 単体では実現できない。フェーズを分けて対応する。",
+        "日本語ファイル名の文字化け対策は 7z.exe の -mcp オプションだけでは不十分な可能性が高く、自前のエンコーディング判定レイヤーと実アーカイブでの検証が必要。未検証。"
+      ]
+    },
+    {
+      "date": "2026-09-03",
+      "title": "解凍ログの折りたたみ表示、対応形式の拡充、詳細設定の追加",
+      "files": [
+        "src/shared/archiveFormats.ts",
+        "src/shared/types.ts",
+        "src/shared/ipc.ts",
+        "src/main/settings/schema.ts",
+        "src/main/ipc/preferencesIpc.ts",
+        "src/main/ipc/registerIpcHandlers.ts",
+        "src/main/ipc/updateIpc.ts",
+        "src/main/ipc/schemas.ts",
+        "src/main/ipc/archive/dialogIpc.ts",
+        "src/main/ipc/archive/task/extractIpc.ts",
+        "src/main/ipc/archive/task/createIpc.ts",
+        "src/main/ipc/archive/task/runner.ts",
+        "src/main/sevenzip/createArchive.ts",
+        "src/main/sevenzip/create/buildCreateArgs.ts",
+        "src/main/sevenzip/create/runCreate.ts",
+        "src/main/sevenzip/create/createViaTar.ts",
+        "src/main/sevenzip/scaleProgress.ts",
+        "src/main/sevenzip/extract/extractOne.ts",
+        "src/main/sevenzip/extract/unwrapTar.ts",
+        "src/main/sevenzip/extractArchive.ts",
+        "src/main/sevenzip/extractBatch.ts",
+        "src/main/sevenzip/listing/toEntry.ts",
+        "src/main/shell/buildRegistryScript.ts",
+        "native/shellext/ExplorerCommand.cpp",
+        "src/preload/index.ts",
+        "src/renderer/app/ProgressApp.tsx",
+        "src/renderer/app/progress/ProgressSummary.tsx",
+        "src/renderer/app/progress/ProgressActions.tsx",
+        "src/renderer/app/progress/useLockedArchives.ts",
+        "src/renderer/components/TaskProgressDialog/ArchiveLogView.tsx",
+        "src/renderer/components/TaskProgressDialog/TaskProgressHeader.tsx",
+        "src/renderer/components/TaskProgressDialog/TaskProgressPanel.tsx",
+        "src/renderer/components/TaskProgressDialog/useArchiveLog.ts",
+        "src/renderer/components/TaskProgressDialog/useTicker.ts",
+        "src/renderer/components/SettingsDialog/PreferencesSection.tsx",
+        "src/renderer/components/SettingsDialog/index.tsx",
+        "src/renderer/components/CompressDialog/SettingsGrid.tsx",
+        "src/renderer/components/CompressDialog/EncryptionPanel.tsx",
+        "src/renderer/components/CompressDialog/fields.ts",
+        "src/renderer/hooks/usePreferences.ts",
+        "src/renderer/hooks/useExtract.ts",
+        "src/renderer/hooks/compress/archiveName.ts",
+        "src/main/window/createMainWindow.ts"
+      ],
+      "summary": "解凍の進捗画面を作り直し、完了後もユーザーが閉じるまで残るようにした。記録は書庫ごとにまとめ、書庫名の行を押すと中のファイル一覧が開く折りたたみ表示にした。あわせて対応拡張子を 7-Zip が読める範囲まで広げ、圧縮形式に TAR / GZIP / BZIP2 / XZ を追加し、除外フィルタ・作業フォルダー・起動時の更新確認を設定画面に足した。macOS 由来の書庫で名前が分解されたまま書き出される問題（NFD）も直した。",
+      "purpose": "解凍を右クリックから走らせたとき、どの書庫が取り出されてどれが失敗したのかが画面に残らず追えなかった。また対応形式が入口の一覧で狭く絞られており、圧縮も ZIP と 7Z の 2 つに限られていた。",
+      "impact": "書庫ごとの結果を伝える archive:task-outcome チャンネルを新設した。ArchiveFormat が 6 種に増えたため、format を扱う箇所は性質表 FORMAT_TRAITS を参照する必要がある。設定に preferences が加わり、settings.json の構造が変わった（既存ファイルは既定値で補われる）。listArchive が返す path は NFC 正規化されるようになった（sourcePath は 7-Zip へ渡す名前なので未正規化のまま）。",
+      "decisions": [
+        "解凍ログのキーを書庫の順番ではなく書庫名にした。パスワードを入れてやり直したときに、新しい行が増えるのではなく同じ行が失敗から成功へ変わるため。",
+        "GZIP / BZIP2 / XZ は 1 つのファイルしか包めないため、複数のファイルやフォルダを選んだ場合は中間 TAR を経由する。中間 TAR は書き出し先と同じ場所の一時フォルダに、最終的な書庫名に合わせた名前で作る（仮の名前のままだと書庫の中身としてそれが見えてしまうため）。",
+        "TAR を経由した書庫を取り出すときは、中身が TAR ひとつだけなら続けてそれも開く。外側を解いただけでは中身が取り出せないため。",
+        "文字の正規化は listArchive の表示名（path）だけに掛け、7-Zip へ渡す sourcePath には掛けない。既存の applyRenames が「表示名に合わせて展開後の名前を付け替える」仕組みを持っているため、表示名を NFC にするだけで両方の経路が揃う。",
+        "右クリックからの一括解凍でパスワードを尋ねる場面は、処理が終わったあとにまとめて設けた。書庫を開かない経路のため途中で尋ねる口がなく、Main から Renderer へ問い合わせる往復を増やすより、失敗した書庫を拾って聞き直すほうが既存の仕組みに乗る。",
+        "解凍の対象拡張子は 7-Zip が読める全形式まで広げたが、右クリックに出す関連付けは書庫として日常的に扱うものへ絞った。読める形式すべてを関連付けると Windows の既定アプリ設定が荒れるため。"
+      ],
+      "concerns": [
+        "エクスプローラーのツールチップに中身の一覧を出す機能は未実装。IQueryInfo を実装した COM シェル拡張が常駐し、書庫にマウスを合わせるたび 7z.exe を起動することになるため、性能と安定性の影響が大きい。",
+        "解凍ログ画面と圧縮形式の追加は、型チェックとビルドは通っているが実際に起動しての目視確認は未了。",
+        "RAR の分割書庫は 7-Zip では作れないため、続きの巻を開いたときの読み替えは実ファイルでの確認ができていない。"
+      ]
+    },
+    {
+      "date": "2026-09-03",
+      "title": "1 書庫 1 窓への変更、多重起動、書庫からの引き出し",
+      "files": [
+        "src/main/index.ts",
+        "src/main/window/windowManager.ts",
+        "src/main/window/launchIntent.ts",
+        "src/main/ipc/registerIpcHandlers.ts",
+        "src/main/ipc/windowIpc.ts",
+        "src/main/ipc/themeIpc.ts",
+        "src/main/ipc/shellIpc.ts",
+        "src/main/ipc/updateIpc.ts",
+        "src/main/ipc/schemas.ts",
+        "src/main/ipc/archive/index.ts",
+        "src/main/ipc/archive/dialogIpc.ts",
+        "src/main/ipc/archive/listIpc.ts",
+        "src/main/ipc/archive/taskIpc.ts",
+        "src/main/ipc/archive/task/runner.ts",
+        "src/main/ipc/archive/task/extractIpc.ts",
+        "src/main/ipc/archive/task/createIpc.ts",
+        "src/main/ipc/archive/task/testIpc.ts",
+        "src/main/ipc/archive/task/modifyIpc.ts",
+        "src/main/ipc/archive/task/viewIpc.ts",
+        "src/main/updater/updateService.ts",
+        "src/main/sevenzip/tempWorkspace.ts",
+        "src/main/sevenzip/dragOut.ts",
+        "src/main/sevenzip/openEntry.ts",
+        "src/preload/index.ts",
+        "src/shared/ipc.ts",
+        "src/shared/types.ts",
+        "src/renderer/hooks/useArchive.ts",
+        "src/renderer/hooks/useDragOut.ts",
+        "src/renderer/hooks/useFileDrop.ts",
+        "src/renderer/app/MainApp.tsx",
+        "src/renderer/app/ArchiveContent.tsx",
+        "src/renderer/app/DialogStack.tsx",
+        "src/renderer/app/useShellLaunch.ts",
+        "src/renderer/app/useLaunchIntent.ts",
+        "src/renderer/components/ArchiveTable/index.tsx",
+        "src/renderer/components/ArchiveTable/TableRow.tsx",
+        "GithubPush.bat",
+        "src/main/window/windowState.ts"
+      ],
+      "summary": "書庫をタブで重ねるのをやめ、1 つにつき 1 つの窓で開くようにした。あわせてアプリを複数立ち上げられるようにし、一覧の行をエクスプローラーへ引きずり出すとその場で取り出せるようにした。GithubPush.bat からソースコードの push を取り除き、Releases への公開だけを行うようにした。",
+      "purpose": "タブは 1 つの窓に書庫を重ねるため、2 つを見比べる操作ができなかった。また書庫の中の数件だけを取り出したいとき、展開先を選ぶ手順を踏む必要があった。",
+      "impact": "IPC ハンドラの登録がアプリ全体で 1 度だけになり、どの窓からの要求かは各ハンドラが event.sender から解決するようになった。進行中の作業を管理する runner は窓ごとに分かれる。useArchiveTabs と TabBar は削除した。起動後に届く要求を既存の窓へ送る archive:open-request も、新しい窓を開く形へ変わったため削除した。",
+      "decisions": [
+        "多重起動は複数のプロセスではなく、1 つのプロセスが複数の窓を持つ形で実現した。2 つ目以降の起動は既存のプロセスへ引き渡され、そこで窓が増える。プロセスを分けると Electron の常駐が二重になって重くなるうえ、右クリックの「圧縮」が選択したファイルごとに起動して 1 つの要求へ合流する仕組みが壊れるため。",
+        "起動引数に要求があるかどうかを whenReady の前に確かめておく。要求のまとめには 400 ミリ秒の待ちがあり、待ち終わる前に「引数なし」と判断すると、素の窓が 1 つ余分に開いてしまう（実測で窓が 3 つ開くことを確認して修正した）。",
+        "エクスプローラーへ引きずり出す経路は、掴んだ時点で一時領域へ書き出してから OS のドラッグへ渡す。引き渡せるのは実体のあるファイルだけのため。書き出しが終わる前にマウスを離された場合はドラッグが始まらないだけで害はない。",
+        "引きずっている間に見えるアイコンは app.getFileIcon で OS から取る。アプリに絵を持たせるより、渡すファイルそのものの見た目のほうが分かりやすいため。",
+        "GithubPush.bat は gh の --repo でリポジトリを明示し、git リポジトリでなくても動くようにした。ソースコードを push せず、ビルド済みのインストーラだけを Releases へ置く用途に絞ったため。",
+        "2 つ目以降の窓は、直前の窓から縦横 28 ピクセルずつずらして開く。同じ場所に重ねると下の窓が完全に隠れ、開いたことに気づけないため。ずらし続けて画面からはみ出す手前まで来たら、元の位置から段を作り直す。基準にする位置は窓を作った順に持ち回る（BrowserWindow.getAllWindows の並び順は保証されないため）。"
+      ],
+      "concerns": [
+        "エクスプローラーへの引き出しは、マウス操作を伴うため自動では確かめられていない。展開そのものは既存の経路と同じ仕組みを使っている。"
+      ]
+    },
+    {
+      "date": "2026-09-03",
+      "title": "見直しで見つかった穴の修正（上書き確認・TAR の誤検知ほか）",
+      "files": [
+        "src/main/sevenzip/extract/unwrapTar.ts",
+        "src/main/sevenzip/extract/extractOne.ts",
+        "src/main/sevenzip/extractBatch.ts",
+        "src/main/sevenzip/extractArchive.ts",
+        "src/main/sevenzip/entryList.ts",
+        "src/main/sevenzip/findConflicts.ts",
+        "src/main/sevenzip/ExtractCancelled.ts",
+        "src/main/sevenzip/writeLock.ts",
+        "src/main/sevenzip/tempWorkspace.ts",
+        "src/main/sevenzip/dragOut.ts",
+        "src/main/ipc/schemas.ts",
+        "src/main/ipc/archive/listIpc.ts",
+        "src/main/ipc/archive/task/askOverwrite.ts",
+        "src/main/ipc/archive/task/extractIpc.ts",
+        "src/main/ipc/archive/task/createIpc.ts",
+        "src/main/ipc/archive/task/modifyIpc.ts",
+        "src/shared/ipc.ts",
+        "src/shared/types.ts",
+        "src/preload/index.ts",
+        "src/renderer/hooks/useOverwriteQuestion.ts",
+        "src/renderer/components/ConflictDialog/index.tsx",
+        "src/renderer/lib/taskView.ts",
+        "src/renderer/components/FailureNotice/index.tsx",
+        "src/renderer/app/ProgressApp.tsx",
+        "src/renderer/app/DialogStack.tsx",
+        "src/renderer/app/MainApp.tsx"
+      ],
+      "summary": "実装を見直して見つかった 6 件を直した。右クリックからの解凍が断りなく既存ファイルを上書きしていた点、ZIP に TAR を 1 つだけ入れた書庫を勝手に二段展開していた点が特に大きい。あわせて数千件を選んだときの取り出し、同じ書庫への同時書き換え、一時ファイルの溜まり込み、圧縮の記録の見え方を直した。",
+      "purpose": "窓を複数持てるようにしたことと、TAR を挟む形式に対応したことで、以前は起こり得なかった壊れ方が生まれていた。",
+      "impact": "ArchiveFailureKind に busy が加わった。一括解凍の IPC は overwrite の指定が無い場合に Renderer へ問い合わせるようになり、答えるまで展開が止まる。取り出す名前が長大な場合は 7-Zip へリストファイルで渡す。",
+      "decisions": [
+        "TAR を続けて開くかどうかは、中身の形だけでなく書庫の種類（gzip / bzip2 / xz など 1 つのファイルしか包めない形式）でも判定する。ZIP に TAR を 1 つだけ入れた書庫は、その TAR を残したくて包んだものなので開いてはいけない。実測で ZIP 内の TAR が残り、本物の .tar.gz は中身まで開かれることを確認した。",
+        "上書きの確認は書庫ごとではなく、最初にぶつかったときに 1 度だけ尋ねて残りの書庫にも同じ扱いを使う。10 個の書庫を選んで 10 回尋ねられては使えないため。「展開しない」を選んだ場合は残りの書庫にも手を付けない。",
+        "取り出す名前が長くなる場合は 7-Zip のリストファイル（@ 指定）へ切り替える。Windows のコマンドラインは 32767 文字までで、3000 件の書庫から半分を選ぶと 64500 文字に達して起動そのものが失敗する（実測）。閾値は余裕を見て 8000 文字。",
+        "同じ書庫への同時書き込みは、パスを鍵にした排他で防ぐ。7-Zip は書庫を作り直す形で書き換えるため、重なると中身が壊れる。書き換えと圧縮の書き出し先の両方に適用する。",
+        "引きずり出しのための一時領域は、直前の 1 回分だけ残して古いものを片付ける。渡した先がまだ読んでいる可能性があるため、いま作った分と直前の分は残す。"
+      ],
+      "concerns": [
+        "パスワードは 7-Zip のコマンドライン引数に載るため、同一利用者の他のプロセスから読める。7-Zip CLI が標準入力での受け渡しに対応していないため、回避手段がない。",
+        "解凍の記録の窓は自動で閉じない仕様のため、多数の書庫をまとめて解凍すると窓が並ぶ。"
+      ]
+    },
+    {
+      "date": "2026-09-03",
+      "title": "GithubPush.bat が PATH 外の GitHub CLI も見つけるように",
+      "files": [
+        "GithubPush.bat"
+      ],
+      "summary": "GitHub CLI が PATH に無い場合でも、winget などが置く既知の場所と、winget のパッケージ配下（名前にハッシュが付く場所）を探すようにした。ログインの案内にも見つけた実体のパスを載せ、そのまま貼って実行できるようにした。",
+      "purpose": "winget で入れた直後は、開いたままの画面に新しい PATH が反映されない。実行しても「見つかりません」と出続けて、入れたのに動かないように見える。",
+      "impact": "gh の呼び出しはすべて、見つけた実体のパス経由になった。",
+      "decisions": [
+        "バッチファイルは CRLF で保存する。部分的に LF が混ざると cmd が行を途中で切って解釈し、意味の分からないエラーが並ぶ（実際に混入させて再現した）。編集後は改行コードを確かめること。",
+        "winget のユーザー導入は %LOCALAPPDATA%\\Microsoft\\WinGet\\Packages\\GitHub.cli_<ハッシュ>\bin\\gh.exe へ展開され、Links の下にファイルは置かれない（アプリ実行エイリアス経由のため）。パスを固定では拾えないので、Packages 配下を dir /b /s で再帰検索する。実測でこの場所に入ることを確認した。",
+        "for /f の中でリダイレクトを打ち消すエスケープは、バッチファイル内では 2^>nul と書く。^^ は二重になり「> was unexpected at this time.」で落ちる（実際に踏んで直した）。",
+        "ログイン済みかの判定は、gh auth status の終了コードではなく出力に Logged in が含まれるかで見る。権限が足りない場合の警告（Missing required token scopes）が将来どちらに転ぶか読めないため、認証の有無そのものを見るほうが確実。なお GH_TOKEN 環境変数があれば gh auth login は不要で、そのトークンがそのまま使われる。"
+      ],
+      "concerns": [
+        "GitHub CLI を入れた直後の 1 回だけ、ログイン済みにもかかわらず gh auth status が失敗と判定された。その後は同じ手順で再現しないため原因は特定できていない。初回起動時の設定作成が絡んでいる可能性があるが、証拠はない。"
+      ]
+    },
+    {
+      "date": "2026-09-03",
+      "title": "公開の手順を GitHub CLI から Node スクリプトへ置き換え（Windows の資格情報からアカウントを選べるように）",
+      "files": [
+        "GithubPush.bat",
+        "package.json",
+        "scripts/release.mjs",
+        "scripts/release/chooseAccount.mjs",
+        "scripts/release/config.mjs",
+        "scripts/release/gitCredential.mjs",
+        "scripts/release/github.mjs",
+        "scripts/release/tokens.mjs"
+      ],
+      "summary": "Releases への公開を GitHub CLI ではなく Node スクリプトで行うようにした。git が push のときに使う Windows の資格情報を最初の候補にして、環境変数のトークンと並べて選べる。切り替えたいときは、見慣れたアカウント選択画面を開く。",
+      "purpose": "アカウントを複数持っているため、公開のたびにどれを使うか選べる必要があった。GH_TOKEN 環境変数は他のどの認証より優先されるため、GitHub CLI 側でアカウントを切り替えても効かない。",
+      "impact": "GitHub CLI は不要になった。npm run release でも同じ処理を呼べる。ビルドは InstallerMake.bat の担当のままで、公開はできあがった成果物を送るだけになった。",
+      "decisions": [
+        "アカウントの取得元は、git credential fill で受け取る Windows の資格情報を第一候補にする。git が push のときに使うのと同じ仕組みなので、すでに選んであるアカウントがそのまま使え、切り替えたいときは利用者が見慣れた選択画面をそのまま開ける。実測で KisaragiIchigo の資格情報が受け取れ、そのリポジトリへ admin 権限を持つことを確認した。",
+        "GitHub CLI をやめて GitHub API を直接呼ぶ。gh はログイン済みのアカウントが 1 つに固定され、しかも GH_TOKEN があるとそれが最優先されるため、複数アカウントの使い分けと相性が悪い。",
+        "トークンは GH_TOKEN / GITHUB_TOKEN に加えて、後ろに名前を付けた形（GH_TOKEN_SUB など）も候補として拾う。",
+        "選ぶ前に、それぞれの持ち主と書き込みの可否を確かめて一覧に出す。書き込めないアカウントで進むと、理由の分かりにくい失敗になる（実際に「workflow スコープが必要かも」という的外れな案内が出た）。",
+        "資格情報を受け取れなかった場合は、候補から消さずに理由を添えて残す。GIT_TERMINAL_PROMPT=0 や GCM_INTERACTIVE=never が設定された環境では選択画面を開けないため、黙って消えると原因が分からなくなる。",
+        "公開は electron-builder の publish ではなく、できあがっている成果物をそのまま送る形にした。ビルドは InstallerMake.bat が担っており、公開のたびに作り直す必要がないため。",
+        "文字列処理で正規表現を組み立てない。エスケープを間違えて owner と repo が空になる不具合と、改行の分割が壊れる不具合を続けて作った。行を見て済む処理は split と startsWith で書く。"
+      ],
+      "concerns": [
+        "実際の公開はまだ行っていない。書き込めるアカウント（KisaragiIchigo）が候補に出るところまでは確認済み。",
+        "☆GitPush.bat が残っているが、参照先の scripts/git-push.js が無いため動かない。他の作業からコピーされたもの。"
+      ]
+    }
+  ]
+}
