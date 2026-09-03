@@ -1,6 +1,6 @@
 {
   "name": "zipper",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Windows 11 の佇まいに馴染む多形式アーカイバ",
   "main": "./out/main/index.js",
   "author": "stiz",
