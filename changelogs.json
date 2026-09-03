@@ -965,6 +965,33 @@
         "実際の公開はまだ行っていない。書き込めるアカウント（KisaragiIchigo）が候補に出るところまでは確認済み。",
         "☆GitPush.bat が残っているが、参照先の scripts/git-push.js が無いため動かない。他の作業からコピーされたもの。"
       ]
+    },
+    {
+      "date": "2026-09-04",
+      "title": "リポジトリの初期化と、公開手順へのソース送信・バージョン指定の追加",
+      "files": [
+        ".gitignore",
+        ".gitattributes",
+        "scripts/release.mjs",
+        "scripts/release/git.mjs",
+        "scripts/release/version.mjs",
+        "scripts/release/pushSources.mjs",
+        "README.md"
+      ],
+      "summary": "この場所を git の管理下に置き、全ソースをコミットした。公開の手順にバージョンの指定とソースの送信を加え、GitHub へ反映する一連の流れを 1 つにまとめた。",
+      "purpose": "Releases への公開だけでなく、ソースそのものもリポジトリへ置いておきたかった。あわせて、公開のたびにバージョンを決められるようにする必要があった。",
+      "impact": "GithubPush.bat の役割が「Releases への公開だけ」から「バージョン決め・ソース送信・Releases 公開」に広がった。GithubPush.bat 自体は .gitignore で除外している。",
+      "decisions": [
+        "リモートには LICENSE だけの初回コミットがあったため、履歴を消さずに取り込んでから繋いだ。force で上書きすると、あとから誰かが足したものまで消える。",
+        "改行は .gitattributes でリポジトリ内を LF に統一し、bat / cmd / ps1 だけ CRLF にする。Windows のコマンド処理系は CRLF でないと行を読み違えるため（実際に LF が混ざって「> was unexpected at this time.」で落ちる不具合を作った）。",
+        "送る前に、コミットしていない変更を必ず一覧で見せる。除外の設定を通り抜けたものがあっても目で気づけるようにするため。",
+        "push の認証は、選んだアカウントのトークンをその場限りの URL に載せる。remote の設定には残さない。失敗したときの文面からはトークンを伏せる。",
+        "バージョンを変えるとインストーラの名前も変わるため、変えた場合は最後に作り直しを促す。"
+      ],
+      "concerns": [
+        "公開に含める内容は目視で確認した。秘密鍵（packaging/*.pfx）は除外設定にあり、ステージにも入っていない。packaging/ZipperDev.cer は公開鍵のみで、インストール時に信頼ストアへ入れるため必要。",
+        "☆GitPush.bat が残っているが、参照先の scripts/git-push.js が無いため動かない。他の作業からコピーされたもの。"
+      ]
     }
   ]
 }
