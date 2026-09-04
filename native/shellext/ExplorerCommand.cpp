@@ -20,10 +20,13 @@ const std::vector<CommandSpec>& ExtractCommands() {
 }
 
 const std::vector<CommandSpec>& CompressCommands() {
+    // 「1 つずつ」は対象ごとに別々の書庫を作る。1 つしか選ばれていなければ出さない
     static const std::vector<CommandSpec> commands = {
-        {L"ZIP に圧縮する", L"--compress-zip"},
-        {L"7Z に圧縮する", L"--compress-7z"},
-        {L"設定して圧縮する", L"--compress"}};
+        {L"ZIP に圧縮する", L"--compress-zip", false},
+        {L"1 つずつ ZIP に圧縮する", L"--compress-zip-each", true},
+        {L"7Z に圧縮する", L"--compress-7z", false},
+        {L"1 つずつ 7Z に圧縮する", L"--compress-7z-each", true},
+        {L"設定して圧縮する", L"--compress", false}};
     return commands;
 }
 
@@ -166,8 +169,19 @@ IFACEMETHODIMP SubCommand::GetCanonicalName(GUID* guid) {
     return S_OK;
 }
 
-IFACEMETHODIMP SubCommand::GetState(IShellItemArray*, BOOL, EXPCMDSTATE* state) {
+IFACEMETHODIMP SubCommand::GetState(IShellItemArray* items, BOOL, EXPCMDSTATE* state) {
     if (state == nullptr) return E_POINTER;
+
+    // 対象ごとに分ける操作は、2 つ以上選ばれていなければ意味がないので伏せる
+    if (spec_.multipleOnly) {
+        IShellItemArray* target = items != nullptr ? items : items_;
+        DWORD count = 0;
+        if (target == nullptr || FAILED(target->GetCount(&count)) || count < 2) {
+            *state = ECS_HIDDEN;
+            return S_OK;
+        }
+    }
+
     *state = ECS_ENABLED;
     return S_OK;
 }

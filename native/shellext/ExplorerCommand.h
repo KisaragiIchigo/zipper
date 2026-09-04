@@ -15,6 +15,8 @@ namespace zipper {
 struct CommandSpec {
     const wchar_t* title;
     const wchar_t* flag;
+    // 2 つ以上選ばれたときだけ出す項目か。1 つでは意味を成さないものに使う
+    bool multipleOnly = false;
 };
 
 // 選択されたものが書庫かどうかで、出す項目を変える
