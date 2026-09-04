@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import { createInterface } from 'node:readline'
+import { buildInstaller, hasInstaller } from './release/buildInstaller.mjs'
 import { chooseAccount } from './release/chooseAccount.mjs'
 import { formatSize, resolveConfig } from './release/config.mjs'
 import { isRepository } from './release/git.mjs'
@@ -30,7 +32,7 @@ function line(text = '') {
   console.log(text)
 }
 
-/** 公開するバージョンを決める。変えた場合はインストーラを作り直す必要がある */
+/** 公開するバージョンを決める。変えるとインストーラの名前も変わる */
 async function decideVersion() {
   const current = readVersion()
   line('いまのバージョン: ' + current)
@@ -48,13 +50,29 @@ async function decideVersion() {
   return { version: typed, changed: true }
 }
 
-/** すでに同じ名前で上がっているものを外してから添える */
+/** 区切り文字。ソース上のエスケープを読み違えないよう、正規表現には書かない */
+const BACKSLASH = String.fromCharCode(92)
+
+/**
+ * 以前の版が付けていた名前。
+ *
+ * パスの区切りを落とし損ねたまま上げていたため、GitHub 側では release.latest.yml の形で残っている。
+ * この名前のままだと更新側が latest.yml を見つけられないので、見かけたら外す。
+ */
+function legacyName(path) {
+  return path.split(BACKSLASH).join('.').split('/').join('.')
+}
+
+/** すでに同じものが上がっていれば外してから添える */
 async function putAsset(account, config, release, file) {
-  const name = file.path.split(/[\/]/).pop()
-  const existing = (release.assets ?? []).find((asset) => asset.name === name)
-  if (existing !== undefined) {
-    line('  差し替えます: ' + name)
-    await deleteAsset(account.token, config.owner, config.repo, existing.id)
+  // 区切りは basename に任せる。自前で分けると Windows のバックスラッシュを取りこぼす
+  const name = basename(file.path)
+  const obsolete = [name, legacyName(file.path)]
+
+  for (const asset of release.assets ?? []) {
+    if (!obsolete.includes(asset.name)) continue
+    line('  外します: ' + asset.name)
+    await deleteAsset(account.token, config.owner, config.repo, asset.id)
   }
 
   line('  送っています: ' + name + '（' + formatSize(file.size) + '）')
@@ -65,19 +83,13 @@ async function putAsset(account, config, release, file) {
 async function publishRelease(config, account) {
   const missing = config.files.filter((file) => !file.exists)
   if (missing.length > 0) {
-    line('Releases への公開は行いません。次のものがありません:')
+    line('[エラー] 次のものが見つからないため、公開できません:')
     for (const file of missing) line('  ' + file.label + ': ' + file.path)
-    line('InstallerMake.bat で作ってから、もう一度実行してください。')
-    return
+    return false
   }
 
   for (const file of config.files) {
     line('  ' + file.label + ': ' + file.path + '（' + formatSize(file.size) + '）')
-  }
-  const go = (await ask(config.tag + ' として公開しますか? y を入力: ')).trim().toLowerCase()
-  if (go !== 'y' && go !== 'yes') {
-    line('公開せずに終わります。')
-    return
   }
   line()
 
@@ -100,6 +112,7 @@ async function publishRelease(config, account) {
 
   line()
   line('公開しました: ' + release.html_url)
+  return true
 }
 
 async function main() {
@@ -133,19 +146,22 @@ async function main() {
   line(account.login + ' として進めます。')
   line()
 
+  // ここから先は尋ねない。作って、送って、公開するまで通す
+  line('--- インストーラ ---')
+  if (hasInstaller(first)) {
+    line('できあがっているものを使います。')
+  } else {
+    buildInstaller(line)
+  }
+  line()
+
   line('--- ソース ---')
-  await pushSources(first, account, ask, line)
+  pushSources(first, account, line, decided.version)
 
   line('--- Releases ---')
-  // バージョンを変えた場合、参照するインストーラの名前も変わる
-  await publishRelease(resolveConfig(), account)
-
-  if (decided.changed) {
-    line()
-    line('バージョンを変えたので、配布物はまだ古いままかもしれません。')
-    line('InstallerMake.bat で作り直してから、もう一度この画面を開いてください。')
-  }
-  return 0
+  // インストーラを作った直後は、ファイルの有無と大きさを取り直す必要がある
+  const done = await publishRelease(resolveConfig(), account)
+  return done ? 0 : 1
 }
 
 main()
