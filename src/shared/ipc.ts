@@ -18,6 +18,7 @@ export const IPC = {
   archiveExtract: 'archive:extract',
   archiveExtractBatch: 'archive:extract-batch',
   archiveCreate: 'archive:create',
+  archiveCreateBatch: 'archive:create-batch',
   archiveTest: 'archive:test',
   archiveAdd: 'archive:add',
   archiveDelete: 'archive:delete',

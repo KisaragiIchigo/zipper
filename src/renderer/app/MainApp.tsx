@@ -11,6 +11,7 @@ import { useShellLaunch } from './useShellLaunch'
 import { resolveVisibleEntries } from './resolveVisibleEntries'
 import { useDirectoryNavigation } from './useDirectoryNavigation'
 import { useEntryOpener } from './useEntryOpener'
+import { useLockedAction } from './useLockedAction'
 import { useSelection } from './useSelection'
 import { Breadcrumb } from '@/components/Breadcrumb'
 import { TaskProgressDialog } from '@/components/TaskProgressDialog'
@@ -55,8 +56,10 @@ export function MainApp() {
   // 絞り込みや移動で見えなくなった行を選んだままにしない
   const selection = useSelection((info?.path ?? '') + '|' + query + '|' + navigation.currentPath)
   const verify = useVerify(archive.path, archive.password, info?.entries.length ?? 0)
-  const opener = useEntryOpener(info, archive.password)
-  const preview = usePreview(info, archive.password)
+  // 中身だけを暗号化した書庫は、取り出す段になって初めて鍵が要ると分かる
+  const locked = useLockedAction(archive.rememberPassword)
+  const opener = useEntryOpener(info, archive.password, locked.hold)
+  const preview = usePreview(info, archive.password, locked.hold)
   const modify = useModifyArchive({
     archivePath: archive.path,
     password: archive.password,
@@ -177,6 +180,7 @@ export function MainApp() {
           modify={modify}
           preview={preview}
           updater={updater}
+          locked={locked}
           settingsOpen={settingsOpen}
           onCloseSettings={() => setSettingsOpen(false)}
         />

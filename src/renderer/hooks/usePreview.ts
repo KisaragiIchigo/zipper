@@ -17,7 +17,8 @@ export interface PreviewController {
 /** 書庫の中身を、外部のアプリを起こさずにその場で確かめる */
 export function usePreview(
   info: ArchiveInfo | null,
-  password: string | undefined
+  password: string | undefined,
+  onLocked: (retry: boolean, replay: (password: string) => void) => void
 ): PreviewController {
   const [state, setState] = useState<PreviewState>({ status: 'closed' })
 
@@ -26,23 +27,37 @@ export function usePreview(
       if (info === null || entry.isDirectory) return
       setState({ status: 'loading', entry })
 
-      void window.zipper.archive
-        .preview({
-          path: info.path,
-          entry: entry.sourcePath,
-          displayPath: entry.path,
-          size: entry.size,
-          ...(password === undefined ? {} : { password })
-        })
-        .then((result) => {
-          setState(
-            result.ok
-              ? { status: 'ready', entry, content: result.content }
-              : { status: 'failed', entry, message: extractFailureMessage(result.kind) }
-          )
-        })
+      // 鍵を入れ直してもらったときは、同じ 1 件をそのまま読み直す
+      const attempt = (key: string | undefined): void => {
+        void window.zipper.archive
+          .preview({
+            path: info.path,
+            entry: entry.sourcePath,
+            displayPath: entry.path,
+            size: entry.size,
+            ...(key === undefined ? {} : { password: key })
+          })
+          .then((result) => {
+            if (result.ok) {
+              setState({ status: 'ready', entry, content: result.content })
+              return
+            }
+            if (result.kind === 'password-required' || result.kind === 'wrong-password') {
+              // 鍵を尋ねている間は、読めなかった旨を重ねて出さない
+              setState({ status: 'closed' })
+              onLocked(result.kind === 'wrong-password', (next) => {
+                setState({ status: 'loading', entry })
+                attempt(next)
+              })
+              return
+            }
+            setState({ status: 'failed', entry, message: extractFailureMessage(result.kind) })
+          })
+      }
+
+      attempt(password)
     },
-    [info, password]
+    [info, onLocked, password]
   )
 
   return { state, open, close: () => setState({ status: 'closed' }) }

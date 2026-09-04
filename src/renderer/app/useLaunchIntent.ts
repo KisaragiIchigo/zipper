@@ -6,8 +6,11 @@ export type ExtractMode = 'ask' | 'here' | 'folder'
 
 export interface LaunchHandlers {
   onOpen: (path: string) => void
-  /** format が null なら設定画面を開く。指定があればその場で作る */
-  onCompress: (paths: readonly string[], format: ArchiveFormat | null) => void
+  /**
+   * format が null なら設定画面を開く。指定があればその場で作る。
+   * separate が真なら、1 つにまとめず対象ごとに別々の書庫を作る
+   */
+  onCompress: (paths: readonly string[], format: ArchiveFormat | null, separate: boolean) => void
   /** 選ばれた書庫をまとめて取り出す。書庫は開かない */
   onExtract: (paths: readonly string[], mode: ExtractMode) => void
 }
@@ -28,13 +31,19 @@ export function useLaunchIntent(handlers: LaunchHandlers): void {
     const handle = (intent: LaunchIntent): void => {
       switch (intent.action) {
         case 'compress':
-          latest.current.onCompress(intent.paths, null)
+          latest.current.onCompress(intent.paths, null, false)
           return
         case 'compress-zip':
-          latest.current.onCompress(intent.paths, 'zip')
+          latest.current.onCompress(intent.paths, 'zip', false)
           return
         case 'compress-7z':
-          latest.current.onCompress(intent.paths, '7z')
+          latest.current.onCompress(intent.paths, '7z', false)
+          return
+        case 'compress-zip-each':
+          latest.current.onCompress(intent.paths, 'zip', true)
+          return
+        case 'compress-7z-each':
+          latest.current.onCompress(intent.paths, '7z', true)
           return
         case 'extract':
           latest.current.onExtract(intent.paths, 'ask')

@@ -54,7 +54,7 @@ function fromCompress(state: CompressState): TaskView | null {
       return {
         kind: 'done',
         destination: state.destination,
-        label: state.destination + ' を作成しました'
+        label: state.summary ?? state.destination + ' を作成しました'
       }
     case 'failed':
       return { kind: 'failed', message: compressFailureMessage(state.kind) }

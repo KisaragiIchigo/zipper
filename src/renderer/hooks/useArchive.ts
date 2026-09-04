@@ -12,6 +12,12 @@ export interface ArchiveController {
   /** 複数まとめて開く。1 つ目だけこの窓が引き受けることがある */
   openMany: (paths: readonly string[]) => void
   openWithPassword: (password: string) => void
+  /**
+   * 一覧はそのままに、鍵だけを覚え直す。
+   * 中身だけを暗号化した書庫は一覧が鍵なしで読めるため、
+   * 取り出す段になって初めて鍵が要ると分かる。そのとき読み込みからやり直さないため。
+   */
+  rememberPassword: (password: string) => void
   setCodepage: (codepage: Codepage | null) => void
   pick: () => void
   reload: () => void
@@ -80,6 +86,10 @@ export function useArchive(): ArchiveController {
     [load, request]
   )
 
+  const rememberPassword = useCallback((password: string) => {
+    setRequest((current) => (current === null ? null : { ...current, password }))
+  }, [])
+
   const setCodepage = useCallback(
     (next: Codepage | null) => {
       if (request === null) return
@@ -114,6 +124,7 @@ export function useArchive(): ArchiveController {
     open,
     openMany,
     openWithPassword,
+    rememberPassword,
     setCodepage,
     pick,
     reload,

@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { shell } from 'electron'
 import { extractArchive } from './extractArchive'
@@ -23,12 +24,19 @@ export async function openArchiveEntry(
 
   const needsRename = options.entry !== options.displayPath
 
-  await extractArchive(archivePath, {
-    destination,
-    entries: [options.entry],
-    ...(needsRename ? { renames: [{ from: options.entry, to: options.displayPath }] } : {}),
-    ...(options.password === undefined ? {} : { password: options.password })
-  })
+  try {
+    await extractArchive(archivePath, {
+      destination,
+      entries: [options.entry],
+      ...(needsRename ? { renames: [{ from: options.entry, to: options.displayPath }] } : {}),
+      ...(options.password === undefined ? {} : { password: options.password })
+    })
+  } catch (error) {
+    // 鍵が違うと、7-Zip は中身を書き込む前に空のファイルだけを残して終わる。
+    // 開けなかったものを取っておく意味はないので、その場で片付ける
+    await rm(destination, { recursive: true, force: true })
+    throw error
+  }
 
   const opened = await shell.openPath(join(destination, options.displayPath))
   if (opened !== '') throw new Error(opened)

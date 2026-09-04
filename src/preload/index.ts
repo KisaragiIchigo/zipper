@@ -24,6 +24,8 @@ import type {
   ConflictQuery,
   CreateArchiveRequest,
   CreateArchiveResult,
+  CreateBatchRequest,
+  CreateBatchResult,
   ExtractRequest,
   ExtractResult,
   OpenArchiveRequest,
@@ -82,6 +84,8 @@ const api: ZipperApi = {
       ipcRenderer.invoke(IPC.archiveExtractBatch, request) as Promise<BatchExtractResult>,
     create: (request: CreateArchiveRequest) =>
       ipcRenderer.invoke(IPC.archiveCreate, request) as Promise<CreateArchiveResult>,
+    createBatch: (request: CreateBatchRequest) =>
+      ipcRenderer.invoke(IPC.archiveCreateBatch, request) as Promise<CreateBatchResult>,
     test: (request: TestArchiveRequest) =>
       ipcRenderer.invoke(IPC.archiveTest, request) as Promise<TestArchiveResult>,
     add: (request: ModifyArchiveRequest) =>
@@ -93,13 +97,16 @@ const api: ZipperApi = {
     onTaskOutcome: (listener) => subscribe<ArchiveOutcome>(IPC.archiveTaskOutcome, listener)
   },
   dialog: {
-    pickDirectory: (defaultPath?: string) =>
-      ipcRenderer.invoke(IPC.dialogPickDirectory, defaultPath) as Promise<string | null>,
+    pickDirectory: (hint?: string) =>
+      ipcRenderer.invoke(IPC.dialogPickDirectory, hint) as Promise<string | null>,
     pickSources: () => ipcRenderer.invoke(IPC.dialogPickSources) as Promise<string[]>,
     pickSourceFolder: () =>
       ipcRenderer.invoke(IPC.dialogPickSourceFolder) as Promise<string | null>,
-    saveArchive: (defaultName: string) =>
-      ipcRenderer.invoke(IPC.dialogSaveArchive, defaultName) as Promise<string | null>
+    saveArchive: (defaultName: string, directory?: string) =>
+      ipcRenderer.invoke(IPC.dialogSaveArchive, {
+        name: defaultName,
+        ...(directory === undefined ? {} : { directory })
+      }) as Promise<string | null>
   },
   update: {
     check: () => ipcRenderer.invoke(IPC.updateCheck) as Promise<UpdateStatus>,

@@ -65,6 +65,21 @@ export function CompressDialog({
             onRemove={onRemove}
           />
 
+          {sources.length > 1 ? (
+            <label className="mt-3 flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={settings.separateArchives}
+                onChange={(event) => update('separateArchives', event.target.checked)}
+                className="mt-0.5"
+              />
+              <span className="text-xs text-secondary">
+                対象ごとに別々の書庫を作ります。フォルダをまとめて選んだ場合は、フォルダの数だけ書庫が並びます。
+                保存先は次の画面で、書庫を置くフォルダとして選びます。
+              </span>
+            </label>
+          ) : null}
+
           <SettingsGrid settings={settings} onChange={update} />
           <EncryptionPanel settings={settings} onChange={update} />
 
@@ -89,7 +104,9 @@ export function CompressDialog({
                 'disabled:pointer-events-none disabled:opacity-40'
               )}
             >
-              保存先を選んで作成
+              {settings.separateArchives && sources.length > 1
+                ? '置き場所を選んで作成'
+                : '保存先を選んで作成'}
             </button>
           </div>
         </Dialog.Content>

@@ -4,6 +4,7 @@ import { extractArchive } from '../extractArchive'
 import { findConflicts } from '../findConflicts'
 import { listArchive } from '../listArchive'
 import { scaleProgress } from '../scaleProgress'
+import { verifyPassword } from '../verifyPassword'
 import { tarInsideName, unwrapTar } from './unwrapTar'
 
 /** 外側を解く工程が全体に占める割合。TAR を開き直す分を後ろに残す */
@@ -38,6 +39,9 @@ export async function extractOne(
     archivePath,
     options.password === undefined ? {} : { password: options.password }
   )
+
+  // 鍵が違えば、宛先に何も書かないうちにここで止まる
+  await verifyPassword(info.path, info.entries, options.password)
 
   // 一覧で見せた名前と 7-Zip が書き出す名前が食い違う書庫は、展開後に付け替える
   const renames = info.entries

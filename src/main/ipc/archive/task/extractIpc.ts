@@ -3,6 +3,8 @@ import { IPC } from '@shared/ipc'
 import type { BatchExtractResult, ExtractResult } from '@shared/types'
 import { extractArchive, type ExtractOptions } from '../../../sevenzip/extractArchive'
 import { extractBatch, type BatchDestination } from '../../../sevenzip/extractBatch'
+import { listArchive } from '../../../sevenzip/listArchive'
+import { verifyPassword } from '../../../sevenzip/verifyPassword'
 import { loadSettings } from '../../../settings/store'
 import { askOverwrite } from './askOverwrite'
 import { batchExtractSchema, extractArchiveSchema } from '../../schemas'
@@ -79,6 +81,15 @@ export function registerExtractIpc(): void {
     }
 
     try {
+      // 鍵の要る書庫は、宛先へ書き始める前に確かめる。違っていれば何も生まれない
+      if (request.hasEncryptedEntry === true) {
+        const info = await listArchive(
+          request.path,
+          request.password === undefined ? {} : { password: request.password }
+        )
+        await verifyPassword(info.path, info.entries, request.password)
+      }
+
       await extractArchive(request.path, options)
       return { ok: true, destination: request.destination }
     } catch (error) {

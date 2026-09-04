@@ -1,12 +1,13 @@
 import { basename } from 'node:path'
 import { ipcMain } from 'electron'
 import { IPC } from '@shared/ipc'
-import type { CreateArchiveResult } from '@shared/types'
+import type { CreateArchiveResult, CreateBatchResult } from '@shared/types'
 import { createArchive, type CreateArchiveOptions } from '../../../sevenzip/createArchive'
+import { createBatch } from '../../../sevenzip/createBatch'
 import { createSelfExtracting } from '../../../sevenzip/createSelfExtracting'
 import { acquireWrite, releaseWrite } from '../../../sevenzip/writeLock'
 import { loadSettings } from '../../../settings/store'
-import { createArchiveSchema } from '../../schemas'
+import { createArchiveSchema, createBatchSchema } from '../../schemas'
 import { failureKindOf, runnerFor } from './runner'
 
 export function registerCreateIpc(): void {
@@ -48,6 +49,50 @@ export function registerCreateIpc(): void {
       } finally {
         runner.finish(controller)
         releaseWrite(request.destination)
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.archiveCreateBatch,
+    async (event, payload: unknown): Promise<CreateBatchResult> => {
+      const runner = runnerFor(event.sender)
+      const request = createBatchSchema.parse(payload)
+      const controller = runner.begin()
+
+      try {
+        // 書き出し先ごとのロックは createBatch が 1 つずつ取る
+        const report = await createBatch(request.sources, {
+          destination: request.destination,
+          format: request.format,
+          level: request.level,
+          exclude: loadSettings().preferences.excludePatterns,
+          signal: controller.signal,
+          onProgress: runner.reportProgress,
+          onOutcome: runner.reportOutcome,
+          ...(request.password === undefined ? {} : { password: request.password }),
+          ...(request.encryptHeader === undefined ? {} : { encryptHeader: request.encryptHeader }),
+          ...(request.zipEncryption === undefined ? {} : { zipEncryption: request.zipEncryption }),
+          ...(request.volumeSize === undefined ? {} : { volumeSize: request.volumeSize }),
+          ...(request.selfExtracting === undefined
+            ? {}
+            : { selfExtracting: request.selfExtracting })
+        })
+
+        // 1 つも作れなかった場合は、まとめて失敗として扱う
+        if (report.succeeded === 0 && report.failures.length > 0) {
+          return { ok: false, kind: report.failures[0]?.kind ?? 'unknown' }
+        }
+        return {
+          ok: true,
+          destination: report.destination,
+          succeeded: report.succeeded,
+          failed: report.failures.length
+        }
+      } catch (error) {
+        return { ok: false, kind: failureKindOf(error, controller.signal.aborted) }
+      } finally {
+        runner.finish(controller)
       }
     }
   )

@@ -93,6 +93,10 @@ export type LaunchAction =
   | 'compress-zip'
   /** 既定の設定でその場に 7Z を作る */
   | 'compress-7z'
+  /** 対象ごとに別々の ZIP をその場に作る */
+  | 'compress-zip-each'
+  /** 対象ごとに別々の 7Z をその場に作る */
+  | 'compress-7z-each'
 
 export interface LaunchIntent {
   action: LaunchAction
@@ -157,6 +161,25 @@ export interface CreateArchiveRequest {
   /** 7z のみ。実行するだけで展開できる exe として書き出す */
   selfExtracting?: boolean
 }
+
+/** 対象ごとに別々の書庫を作るときの要求 */
+export interface CreateBatchRequest {
+  sources: string[]
+  /** できた書庫を並べて置く場所 */
+  destination: string
+  format: ArchiveFormat
+  level: CompressionLevel
+  password?: string
+  encryptHeader?: boolean
+  zipEncryption?: ZipEncryption
+  volumeSize?: string
+  /** 7z のみ。実行するだけで展開できる exe として書き出す */
+  selfExtracting?: boolean
+}
+
+export type CreateBatchResult =
+  | { ok: true; destination: string; succeeded: number; failed: number }
+  | { ok: false; kind: ArchiveFailureKind | 'cancelled' }
 
 /** 展開先に同じ名前のものがあったときに、利用者へ出す問い */
 export interface OverwriteQuestion {
@@ -294,6 +317,11 @@ export interface ExtractRequest {
   overwrite?: OverwriteMode
   /** 全体の件数。進捗の表示に使う */
   totalFiles?: number
+  /**
+   * 暗号化された項目を含むか。
+   * 真のときだけ、展開を始める前に鍵を確かめる。宛先に書きかけを残さないため。
+   */
+  hasEncryptedEntry?: boolean
   password?: string
 }
 
@@ -342,6 +370,8 @@ export interface ZipperApi {
     /** 複数の書庫を続けて取り出す。書庫を開かずに処理する */
     extractBatch: (request: BatchExtractRequest) => Promise<BatchExtractResult>
     create: (request: CreateArchiveRequest) => Promise<CreateArchiveResult>
+    /** 対象ごとに別々の書庫を作る。フォルダの数だけ書庫を並べたいときに使う */
+    createBatch: (request: CreateBatchRequest) => Promise<CreateBatchResult>
     /** 中身を読み直して、壊れていないかを確かめる */
     test: (request: TestArchiveRequest) => Promise<TestArchiveResult>
     /** 既存の書庫にファイルを足す。格納先は最上位になる */
@@ -355,13 +385,19 @@ export interface ZipperApi {
     onTaskOutcome: (listener: (outcome: ArchiveOutcome) => void) => () => void
   }
   dialog: {
-    /** 展開先フォルダを選ぶ。取り消された場合は null */
-    pickDirectory: (defaultPath?: string) => Promise<string | null>
+    /**
+     * 展開先フォルダを選ぶ。取り消された場合は null。
+     * hint には対象がある場所を渡す。作業フォルダの設定が無いとき、そこから開く
+     */
+    pickDirectory: (hint?: string) => Promise<string | null>
     /** 圧縮するファイルを選ぶ。Windows ではファイルとフォルダを同時に選べないため入口を分ける */
     pickSources: () => Promise<string[]>
     pickSourceFolder: () => Promise<string | null>
-    /** 作成する書庫の保存先を決める。取り消された場合は null */
-    saveArchive: (defaultName: string) => Promise<string | null>
+    /**
+     * 作成する書庫の保存先を決める。取り消された場合は null。
+     * directory には対象がある場所を渡す。作業フォルダの設定が無いとき、そこから開く
+     */
+    saveArchive: (defaultName: string, directory?: string) => Promise<string | null>
   }
   update: {
     /** 現在の版と、公開されている最新版を照らし合わせる */

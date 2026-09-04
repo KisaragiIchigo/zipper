@@ -1,6 +1,7 @@
 import { EMPTY_PROGRESS } from '@/lib/taskTiming'
 import { useCallback, useEffect, useState } from 'react'
 import type { ArchiveFailureKind, OverwriteMode, TaskProgress } from '@shared/types'
+import { directoryOf } from '@/lib/pathUtils'
 
 interface PendingExtract {
   path: string
@@ -9,12 +10,16 @@ interface PendingExtract {
   renames?: { from: string; to: string }[]
   /** 展開後に生まれる件数。進捗の分母になる */
   totalFiles: number
+  /** 暗号化された項目を含むか。展開前に鍵を確かめるかの判断に使う */
+  hasEncryptedEntry?: boolean
   password?: string
 }
 
 export type ExtractState =
   | { status: 'idle' }
   | { status: 'conflict'; conflicts: string[]; pending: PendingExtract }
+  /** 鍵が要る、または鍵が違うと分かって止まっている状態 */
+  | { status: 'locked'; pending: PendingExtract; overwrite: OverwriteMode; retry: boolean }
   | { status: 'running'; progress: TaskProgress; startedAt: number }
   | { status: 'done'; destination: string; summary?: string }
   | { status: 'failed'; kind: ArchiveFailureKind | 'cancelled' }
@@ -28,6 +33,8 @@ export interface ExtractRequestInput {
   outputPaths: string[]
   /** 展開先。未指定ならダイアログで選ばせる */
   destination?: string
+  /** 暗号化された項目を含むか */
+  hasEncryptedEntry?: boolean
   password?: string
 }
 
@@ -46,6 +53,10 @@ export interface ExtractController {
   startBatch: (input: BatchExtractInput) => void
   /** 衝突の確認に答える。null は取り消し */
   resolveConflict: (mode: OverwriteMode | null) => void
+  /** 鍵を受け取って、止まっていた展開をやり直す */
+  submitPassword: (password: string) => void
+  /** 鍵の入力をやめる */
+  dismissPassword: () => void
   cancel: () => void
   dismiss: () => void
   reveal: (destination: string) => void
@@ -72,20 +83,31 @@ export function useExtract(): ExtractController {
       totalFiles: pending.totalFiles,
       ...(pending.entries === undefined ? {} : { entries: pending.entries }),
       ...(pending.renames === undefined ? {} : { renames: pending.renames }),
+      ...(pending.hasEncryptedEntry === undefined
+        ? {}
+        : { hasEncryptedEntry: pending.hasEncryptedEntry }),
       ...(pending.password === undefined ? {} : { password: pending.password })
     })
 
-    setState(
-      result.ok
-        ? { status: 'done', destination: result.destination }
-        : { status: 'failed', kind: result.kind }
-    )
+    if (result.ok) {
+      setState({ status: 'done', destination: result.destination })
+      return
+    }
+
+    // 鍵の問題は失敗として畳まず、入れ直してもらう。宛先には何も書かれていない
+    if (result.kind === 'password-required' || result.kind === 'wrong-password') {
+      setState({ status: 'locked', pending, overwrite, retry: result.kind === 'wrong-password' })
+      return
+    }
+    setState({ status: 'failed', kind: result.kind })
   }, [])
 
   const start = useCallback(
     (input: ExtractRequestInput) => {
       void (async () => {
-        const destination = input.destination ?? (await window.zipper.dialog.pickDirectory())
+        // 書庫と同じ場所から開く。別の場所へ出したいときだけ選び直してもらう
+        const destination =
+          input.destination ?? (await window.zipper.dialog.pickDirectory(directoryOf(input.path)))
         if (destination === null) return
 
         const pending: PendingExtract = {
@@ -94,6 +116,9 @@ export function useExtract(): ExtractController {
           totalFiles: input.outputPaths.length,
           ...(input.entries === undefined ? {} : { entries: input.entries }),
           ...(input.renames === undefined ? {} : { renames: input.renames }),
+          ...(input.hasEncryptedEntry === undefined
+            ? {}
+            : { hasEncryptedEntry: input.hasEncryptedEntry }),
           ...(input.password === undefined ? {} : { password: input.password })
         }
 
@@ -130,7 +155,11 @@ export function useExtract(): ExtractController {
     void (async () => {
       let destination: string | undefined
       if (input.mode === 'ask') {
-        const picked = await window.zipper.dialog.pickDirectory()
+        // 1 つ目の書庫がある場所から開く。まとめて選ぶときは同じ場所にあることが多い
+        const first = input.archives[0]
+        const picked = await window.zipper.dialog.pickDirectory(
+          first === undefined ? undefined : directoryOf(first)
+        )
         if (picked === null) return
         destination = picked
       }
@@ -161,9 +190,31 @@ export function useExtract(): ExtractController {
     })()
   }, [])
 
+  const submitPassword = useCallback(
+    (password: string) => {
+      setState((current) => {
+        if (current.status !== 'locked') return current
+        void run({ ...current.pending, password }, current.overwrite)
+        return current
+      })
+    },
+    [run]
+  )
+
+  const dismissPassword = useCallback(() => setState({ status: 'idle' }), [])
   const cancel = useCallback(() => window.zipper.archive.cancelTask(), [])
   const dismiss = useCallback(() => setState({ status: 'idle' }), [])
   const reveal = useCallback((destination: string) => window.zipper.shell.reveal(destination), [])
 
-  return { state, start, startBatch, resolveConflict, cancel, dismiss, reveal }
+  return {
+    state,
+    start,
+    startBatch,
+    resolveConflict,
+    submitPassword,
+    dismissPassword,
+    cancel,
+    dismiss,
+    reveal
+  }
 }

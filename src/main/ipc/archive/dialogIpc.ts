@@ -3,6 +3,7 @@ import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electro
 import { IPC } from '@shared/ipc'
 import { READABLE_EXTENSIONS } from '@shared/archiveFormats'
 import { loadSettings } from '../../settings/store'
+import { saveArchiveSchema } from '../schemas'
 
 
 /** ダイアログを出す親。要求してきた窓に紐づけて、他の窓を巻き込まない */
@@ -24,9 +25,16 @@ async function openDialog(
   return result.canceled ? [] : result.filePaths
 }
 
-/** 設定に作業フォルダがあれば、ダイアログはそこから開く */
-function preferredStart(): string {
-  return loadSettings().preferences.workFolder
+/**
+ * ダイアログを最初に開く場所を決める。
+ *
+ * 設定に作業フォルダがあればそこを使い、無ければ操作の対象がある場所から開く。
+ * 別の場所へ出したいときだけ、そのつどダイアログで選んでもらう前提の並びにしてある。
+ */
+function startDirectory(hint: unknown): string {
+  const preferred = loadSettings().preferences.workFolder
+  if (preferred !== '') return preferred
+  return typeof hint === 'string' ? hint : ''
 }
 
 /** ファイルとフォルダを選ばせる一連のダイアログ */
@@ -43,15 +51,12 @@ export function registerDialogIpc(): void {
     return picked[0] ?? null
   })
 
-  ipcMain.handle(IPC.dialogPickDirectory, async (event, defaultPath: unknown) => {
+  ipcMain.handle(IPC.dialogPickDirectory, async (event, hint: unknown) => {
+    const start = startDirectory(hint)
     const picked = await openDialog(event, {
       title: '展開先のフォルダを選択',
       properties: ['openDirectory', 'createDirectory'],
-      ...(typeof defaultPath === 'string' && defaultPath !== ''
-        ? { defaultPath }
-        : preferredStart() === ''
-          ? {}
-          : { defaultPath: preferredStart() })
+      ...(start === '' ? {} : { defaultPath: start })
     })
     return picked[0] ?? null
   })
@@ -72,13 +77,14 @@ export function registerDialogIpc(): void {
     return picked[0] ?? null
   })
 
-  ipcMain.handle(IPC.dialogSaveArchive, async (event, defaultName: unknown) => {
+  ipcMain.handle(IPC.dialogSaveArchive, async (event, payload: unknown) => {
+    const request = saveArchiveSchema.parse(payload)
+    const start = startDirectory(request.directory)
     const parent = parentOf(event)
+
     const options: Electron.SaveDialogOptions = {
       title: '書庫の保存先',
-      ...(typeof defaultName === 'string' && defaultName !== ''
-        ? { defaultPath: join(preferredStart(), defaultName) }
-        : {}),
+      defaultPath: start === '' ? request.name : join(start, request.name),
       filters: [
         { name: 'ZIP 書庫', extensions: ['zip'] },
         { name: '7Z 書庫', extensions: ['7z'] },

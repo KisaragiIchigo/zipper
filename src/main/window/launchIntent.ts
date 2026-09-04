@@ -18,7 +18,9 @@ const ACTION_FLAGS: Readonly<Record<string, LaunchAction>> = {
   '--extract-to-folder': 'extract-to-folder',
   '--compress': 'compress',
   '--compress-zip': 'compress-zip',
-  '--compress-7z': 'compress-7z'
+  '--compress-7z': 'compress-7z',
+  '--compress-zip-each': 'compress-zip-each',
+  '--compress-7z-each': 'compress-7z-each'
 }
 
 /**

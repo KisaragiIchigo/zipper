@@ -38,6 +38,7 @@ export function buildExtractRequest(
     outputPaths,
     ...(targets.length === 0 ? {} : { entries: targets }),
     ...(renames.length === 0 ? {} : { renames }),
+    ...(info.hasEncryptedEntry ? { hasEncryptedEntry: true } : {}),
     ...(password === undefined ? {} : { password })
   }
 }

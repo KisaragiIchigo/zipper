@@ -11,6 +11,8 @@ import type { ExtractController } from '@/hooks/useExtract'
 import type { ModifyController } from '@/hooks/useModifyArchive'
 import type { PreviewController } from '@/hooks/usePreview'
 import type { UpdaterController } from '@/hooks/useUpdater'
+import { resolvePasswordPrompt } from './resolvePasswordPrompt'
+import type { LockedActionController } from './useLockedAction'
 
 interface DialogStackProps {
   archive: ArchiveController
@@ -20,6 +22,8 @@ interface DialogStackProps {
   modify: ModifyController
   preview: PreviewController
   updater: UpdaterController
+  /** 鍵が要ると分かって止まっている、書庫の中身への操作 */
+  locked: LockedActionController
   settingsOpen: boolean
   onCloseSettings: () => void
 }
@@ -36,10 +40,11 @@ export function DialogStack({
   modify,
   preview,
   updater,
+  locked,
   settingsOpen,
   onCloseSettings
 }: DialogStackProps) {
-  const { state } = archive
+  const password = resolvePasswordPrompt(archive, extract, locked)
 
   return (
     <>
@@ -89,11 +94,11 @@ export function DialogStack({
       <PreviewDialog state={preview.state} onClose={preview.close} />
 
       <PasswordDialog
-        open={state.status === 'password'}
-        archivePath={state.status === 'password' ? state.path : ''}
-        retry={state.status === 'password' ? state.retry : false}
-        onSubmit={archive.openWithPassword}
-        onCancel={archive.close}
+        open={password !== null}
+        archivePath={password?.path ?? ''}
+        retry={password?.retry ?? false}
+        onSubmit={(value) => password?.onSubmit(value)}
+        onCancel={() => password?.onCancel()}
       />
     </>
   )

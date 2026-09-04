@@ -23,8 +23,9 @@ export function useShellLaunch({ open, compress, extract }: ShellLaunchSources):
   )
 
   const onCompress = useCallback(
-    (paths: readonly string[], format: ArchiveFormat | null) => {
+    (paths: readonly string[], format: ArchiveFormat | null, separate: boolean) => {
       if (format === null) compress.beginWith(paths)
+      else if (separate) compress.compressEachNow(paths, format)
       else compress.compressNow(paths, format)
     },
     [compress]

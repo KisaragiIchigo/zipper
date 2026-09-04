@@ -15,7 +15,8 @@ export interface EntryOpener {
  */
 export function useEntryOpener(
   info: ArchiveInfo | null,
-  password: string | undefined
+  password: string | undefined,
+  onLocked: (retry: boolean, replay: (password: string) => void) => void
 ): EntryOpener {
   const [error, setError] = useState<string | null>(null)
 
@@ -23,18 +24,31 @@ export function useEntryOpener(
     (entry: ArchiveEntry) => {
       if (info === null || entry.isDirectory) return
 
-      void window.zipper.archive
-        .openEntry({
-          path: info.path,
-          entry: entry.sourcePath,
-          displayPath: entry.path,
-          ...(password === undefined ? {} : { password })
-        })
-        .then((result) => {
-          setError(result.ok ? null : extractFailureMessage(result.kind))
-        })
+      // 鍵を入れ直してもらったときは、同じ 1 件をそのまま開き直す
+      const attempt = (key: string | undefined): void => {
+        void window.zipper.archive
+          .openEntry({
+            path: info.path,
+            entry: entry.sourcePath,
+            displayPath: entry.path,
+            ...(key === undefined ? {} : { password: key })
+          })
+          .then((result) => {
+            if (result.ok) {
+              setError(null)
+              return
+            }
+            if (result.kind === 'password-required' || result.kind === 'wrong-password') {
+              onLocked(result.kind === 'wrong-password', attempt)
+              return
+            }
+            setError(extractFailureMessage(result.kind))
+          })
+      }
+
+      attempt(password)
     },
-    [info, password]
+    [info, onLocked, password]
   )
 
   return { open, error, dismiss: () => setError(null) }

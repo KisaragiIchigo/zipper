@@ -115,7 +115,9 @@ export function buildRegisterScript(exePath: string): string {
   blocks.push(
     ...subMenu(COMPRESS_MENU, exePath, [
       { id: '010zip', label: 'ZIP に圧縮する', flag: '--compress-zip' },
+      { id: '015zipeach', label: '1 つずつ ZIP に圧縮する', flag: '--compress-zip-each' },
       { id: '020sevenzip', label: '7Z に圧縮する', flag: '--compress-7z' },
+      { id: '025sevenzipeach', label: '1 つずつ 7Z に圧縮する', flag: '--compress-7z-each' },
       { id: '030choose', label: '設定して圧縮する', flag: '--compress' }
     ])
   )

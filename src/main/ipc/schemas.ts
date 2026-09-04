@@ -36,6 +36,21 @@ export const createArchiveSchema = z.object({
   selfExtracting: z.boolean().optional()
 })
 
+export const createBatchSchema = z.object({
+  sources: z.array(z.string().min(1)).min(1),
+  destination: z.string().min(1),
+  format: z.enum(['zip', '7z', 'tar', 'gzip', 'bzip2', 'xz']),
+  level: z.union([z.literal(0), z.literal(1), z.literal(5), z.literal(9)]),
+  password: z.string().optional(),
+  encryptHeader: z.boolean().optional(),
+  zipEncryption: z.enum(['AES256', 'ZipCrypto']).optional(),
+  volumeSize: z
+    .string()
+    .regex(/^[1-9][0-9]*[kmg]$/, '分割サイズの指定が不正です')
+    .optional(),
+  selfExtracting: z.boolean().optional()
+})
+
 export const openEntrySchema = z.object({
   path: z.string().min(1),
   entry: relativeEntryPath,
@@ -92,7 +107,15 @@ export const extractArchiveSchema = z.object({
   renames: z.array(z.object({ from: relativeEntryPath, to: relativeEntryPath })).optional(),
   overwrite: z.enum(['overwrite', 'skip', 'rename']).optional(),
   totalFiles: z.number().int().min(0).optional(),
+  hasEncryptedEntry: z.boolean().optional(),
   password: z.string().optional()
+})
+
+export const saveArchiveSchema = z.object({
+  /** 保存ダイアログに出す初期のファイル名 */
+  name: z.string().min(1),
+  /** 対象がある場所。作業フォルダの設定が無いときの初期位置に使う */
+  directory: z.string().optional()
 })
 
 export const openArchiveSchema = z.object({
